@@ -1,0 +1,10 @@
+GENOA
+python==3.0
+python libaries
+python3 -m numpy.f2py -c angzen.edf.f -m angzen
+
+
+For postprocessing
+1. generate the flow chart from file [chem_name].viz
+   install graphviz
+2. 

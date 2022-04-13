@@ -1,0 +1,26 @@
+# -*-sh-*-
+
+### Directories
+backups/*
+rdc/*
+__pycache__/*
+
+toto*
+nohup*
+
+### Binaries
+*.o
+*.a
+*.so
+*.os
+*.py[cod]
+*.mod
+*.bin
+
+### Emacs files
+*~
+\#*\#
+.\#*
+
+### mac system file
+.DS_Store
