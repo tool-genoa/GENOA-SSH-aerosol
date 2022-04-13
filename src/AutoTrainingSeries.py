@@ -128,8 +128,8 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                 break
 
     # generate record files
-    if iauto0 > 0: frec = open ('{:s}/ReductionRec_{:s}'.format(pathNewChem,tail),'a+') # add
-    else: frec = open ('{:s}/ReductionRec_{:s}'.format(pathNewChem,tail),'w+') # renew
+    if iauto0 > 0: frec = open ('{:s}/CaseRdc_{:s}'.format(pathNewChem,tail),'a+') # add
+    else: frec = open ('{:s}/CaseRdc_{:s}'.format(pathNewChem,tail),'w+') # renew
 
     # directory
     # absolute path

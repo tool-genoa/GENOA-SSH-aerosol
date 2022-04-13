@@ -65,7 +65,7 @@ def auto_reduction(APSetups = RunSets[3], ATSetups = RunSets[4], locs = locs):
         ichempr = ichem+'P'
         chems = [ichem, ichemfk, ichempr]
         # generate folders if not exists
-        path_sav_chem = '{0:s}/{1:s}_chem'.format(pathNewChem,tail)
+        path_sav_chem = '{0:s}/{1:s}_chems'.format(pathNewChem,tail)
         path_sav_res = '{0:s}/{1:s}'.format(pathNewRes,tail)
         for i in path_sav_chem, path_sav_res: create_folder(i)
         # get chems
