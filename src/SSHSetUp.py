@@ -10,9 +10,9 @@
 
 import os
 import time
-from datetime import datetime
+import shutil
 import numpy as np
-
+from datetime import datetime
 from multiprocessing import Pool
 
 from Parameters import namelist_pre, outputs, pathSSH_sav
@@ -94,7 +94,8 @@ def run_one_sim(ipath,iloc,itimes, pathInit, rPath,
     # copy organic concs. if need
     if isavorg: 
         os.makedirs(isavorg, exist_ok=True)
-        os.system('cp {:s}/aero/Organics_1.txt {:s}/{:d}h.txt'.format(ipath, isavorg, inow))
+        shutil.copy('{:s}/aero/Organics_1.txt'.format(ipath),
+                    '{:s}/{:d}h.txt'.format(isavorg, inow))
 
     # analysis errors
     errs = [None, None] # init
@@ -137,18 +138,20 @@ def set_SSH(IDchem,pathChem,pathSSH,pathSSH_sav = pathSSH_sav, mode = 'fast_comp
     """
     # check exists
     if not os.path.exists('{:s}/src/ssh-aerosol.f90'.format(pathSSH)):
-        os.makedirs(pathSSH, exist_ok=True)
-        os.system('cp -rf {:s}/* {:s}/'.format(pathSSH_sav[0],pathSSH)) # default: fast
+        shutil.rmtree(pathSSH, ignore_errors=True) # clean
+        shutil.copytree(pathSSH_sav[0],pathSSH) # default: fast
 
     # check mode
     if 'complete' in mode:
         if not is_same_file('{:s}/ssh-aerosol.com'.format(pathSSH_sav[1]), '{:s}/src/ssh-aerosol.f90'.format(pathSSH)):
             print('Running ssh-aerosol-genoa to the complete mode...')
-            os.system('cp {0:s}/ssh-aerosol.com {1:s}/src/ssh-aerosol.f90'.format(pathSSH_sav[1], pathSSH))
+            shutil.copy('{:s}/ssh-aerosol.com'.format(pathSSH_sav[1]),
+                        '{:s}/src/ssh-aerosol.f90'.format(pathSSH))
     elif 'fast' in mode:
         if not is_same_file('{:s}/ssh-aerosol.sim'.format(pathSSH_sav[1]), '{:s}/src/ssh-aerosol.f90'.format(pathSSH)):
             print('Running ssh-aerosol-genoa to the fast mode...')
-            os.system('cp {0:s}/ssh-aerosol.sim {1:s}/src/ssh-aerosol.f90'.format(pathSSH_sav[1], pathSSH))
+            shutil.copy('{:s}/ssh-aerosol.sim'.format(pathSSH_sav[1]),
+                        '{:s}/src/ssh-aerosol.f90'.format(pathSSH))
     else:
         print(mode, 'SSU: mode not exist')
         raise TypeError('Check ssh mode.')
@@ -160,11 +163,10 @@ def set_SSH(IDchem,pathChem,pathSSH,pathSSH_sav = pathSSH_sav, mode = 'fast_comp
             for i in ['reactions', 'species', 'aer.vec', 'mol', 'RO2']:
                 tmp0 = '{0:s}/{1:s}/{1:s}.{2:s}'.format(pathChem,IDchem,i) #new
                 tmp1 = '{0:s}/src/include/CHEMISTRY/BCARY/BCARY.{1:s}'.format(pathSSH,i) #old
-                if not is_same_file(tmp0, tmp1):
-                    os.system('cp {:s} {:s}'.format(tmp0, tmp1))
+                if not is_same_file(tmp0, tmp1): shutil.copy(tmp0, tmp1)
                     #if i in ['reactions', 'species']: tag += 1
             #if tag: # remove pervious executive files
-            #    os.system('rm -f {0:s}/src/include/CHEMISTRY/BCARY/*.f90'.format(pathSSH))
+            #    os.system('{0:s}/src/include/CHEMISTRY/BCARY/*.f90'.format(pathSSH))
         cmd = './compile >tmptoto  2>&1'
         if 'clean' in mode: 
             print('Complete clean SSH before compile...')

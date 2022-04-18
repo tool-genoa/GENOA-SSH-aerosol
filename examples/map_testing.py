@@ -1,8 +1,15 @@
-#===================================================
+# -*- coding: utf-8 -*-
+#================================================================================
 #
-# This is a file for post-processing the record file
+#     GENOA v1.0: the GENerator of reduced Organic Aerosol mechanism
 #
-#=================================================== 
+#     Copyright (C) 2022 CEREA (ENPC) - INERIS.
+#     GENOA is distributed under GPL v3.
+#
+#
+# This is a file for post-processing the testing results named after Testing_[chem_name]
+#================================================================================
+
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,20 +22,21 @@ params = {'legend.fontsize': 'x-large',
          'ytick.labelsize':'x-large'}
 pylab.rcParams.update(params)
 
-#### user input
+#### user input -- CHANGE HERE !
 # path + name of the record file for testing.
-testing_file = '../../../genoa-clean-SQT/toSSHA/B3_chem/'
+testing_file = '../../results_bcary_example/chems/R_chems/Testing_BCARYR6R_all'
 # name for the output figure.
-savname = 'testing'
-
-err_tol = 0.32 # maximum error in the error bar
-# number of the color bar for display the error distribution. 
+savname = 'Testing_R6R'
+# maximum error of the error bar
+err_tol = 0.18
+# Number of the color bar for display the error distribution. 
 # For each column, the error range will be n * (err_tol/nerr) to (n+1) * (err_tol/nerr)
-nerr = 8
+nerr = 6
+####
 
 #### load map info
-lat = np.load('../inputs_bcary/conditions/latitudes.npy')
-lon = np.load('../inputs_bcary/conditions/longitudes.npy')
+lat = np.load('../../conditions_bcary/latitudes.npy')
+lon = np.load('../../conditions_bcary/longitudes.npy')
 # shape of the data
 nm, nt, nz, ny, nx = 12, 24, 9, 153, 143
 nps = nm*ny*nx
@@ -94,15 +102,20 @@ ma = Basemap(projection = 'cyl',
 ma.shadedrelief()
 
 parallels = np.arange(35.,70.,10)
-ma.drawparallels(parallels,labels=[False,True,True,False], fontsize = 'x-large')
+ma.drawparallels(parallels,labels=[False,True,True,False],fmt='%g ',fontsize = 'x-large')
 meridians = np.arange(-10,40,10)
-ma.drawmeridians(meridians,labels=[True,False,False,True], fontsize = 'x-large')
+ma.drawmeridians(meridians,labels=[True,False,False,True],fmt='%g ',fontsize = 'x-large')
 
 items = [[],[],[]] # for plotting
 nerr_bar = np.arange(0,err_tol * 100. + 0.1, err_tol * 100./ nerr)
 for i in range(len(ilerr[0])):
+
     # month,lat,lon
     m,y,x = ilerr[0][i][0], ilerr[0][i][1], ilerr[0][i][2]
+
+    # only plot summber conditions
+    #if m not in [5,6,7,8]: continue # June, July, August, september
+
     # y
     tmp =lat[y]
     items[0].append(tmp)
@@ -120,13 +133,13 @@ print('Max err: ', max(items[2]),'Ave err: ',sum(items[2])/len(items[2]),'Number
 
 # plot errors
 plt.scatter(x=items[1], y=items[0],c=items[2], cmap=plt.cm.get_cmap("hot_r", nerr),marker = 'o', lw = 0, s= 10)
-cbar = plt.colorbar(orientation="horizontal", fraction=0.09, pad=0.06,label = 'fractional error (%)',ticks = nerr_bar)
+cbar = plt.colorbar(orientation="horizontal", fraction=0.09, pad=0.06,label = 'Error (%)',ticks = nerr_bar)
 plt.clim(vmin=0., vmax = err_tol * 100.)
 # layout setting
 plt.tight_layout()
-plt.subplots_adjust(top = 0.98, right = 0.93, left = 0.04, bottom = 0.08) # without title
+plt.subplots_adjust(top = 0.98, right = 0.91, left = 0.04, bottom = 0.08) # without title
 # save figure
-plt.savefig(savname,dpi=300)
+plt.savefig(savname) #_summer
 plt.show()
 plt.close()
 

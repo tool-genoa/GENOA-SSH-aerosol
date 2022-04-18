@@ -11,6 +11,7 @@
 import os
 import sys
 import json
+import shutil
 import numpy as np
 from datetime import datetime
 
@@ -229,9 +230,9 @@ def auto_testing(Setups = RunSets[4], IDchem = IDchem, chempath = pathNewChem,
         path = '{:s}/{:s}_test'.format(sav_soapath, tail)
         create_folder(path,del_exist = True)
         # save rdc results
-        os.system('mv {:s}/rdc {:s}/'.format(pathSSH_rdc,path))
+        shutil.move(pathSSH_rdc,path)
         # save ref results
-        os.system('mv {:s}/{:s} {:s}/'.format(pathSSH_ref,orgPath,path))
+        shutil.move(pathSSH_ref+'/'+orgPath,path)
 
     if out_ind == []:
         print('Testing result []',out_ind, emax, err_ave, err_ave_max,tail_ref,pathSSH_ref,tail,pathSSH_rdc)

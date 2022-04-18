@@ -9,6 +9,7 @@
 #================================================================================
 
 import os
+import shutil
 import numpy as np
 from datetime import datetime, date
 
@@ -130,8 +131,7 @@ def create_folder(path, del_exist = False):
     """generate the new folder if it does not exist.
        clean up all files/sub-directories if it exists."""
     if os.path.exists(path):
-        if del_exist:
-            os.system('rm -rf {:s}/*'.format(path))
+        if del_exist: shutil.rmtree(path, ignore_errors=True)
     os.makedirs(path, exist_ok=True)
     return True
 
@@ -159,9 +159,10 @@ def move_results(path_old, path_new, items = []):
     for lc in results:
         # clean old folder if exist
         if lc in exist_locs:
-            os.system('rm -rf {:s}/{:s}'.format(path_new,lc))
+            shutil.rmtree('{:s}/{:s}'.format(path_new,lc), ignore_errors=True)
         # mv new result
-        os.system('mv {0:s}/{1:s} {2:s}/{1:s}'.format(path_old,lc,path_new))
+        shutil.move('{:s}/{:s}'.format(path_old,lc),
+                    '{:s}/{:s}'.format(path_new,lc))
         tar_locs.remove(lc)
 
     # clean old empty folder

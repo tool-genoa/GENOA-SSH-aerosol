@@ -11,8 +11,9 @@
 import sys
 import os
 import json
-import numpy as np
+import shutil
 import time
+import numpy as np
 
 from string import ascii_letters, digits
 
@@ -59,6 +60,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
     # read this part of info from Parameters.py
 
     IDchemPre = Setups['IDchemPre']
+    IDchemVad = IDchemPre
     prePath = os.path.abspath(Setups['prePath'])
     pre_chem_path = Setups['preChemPath']
 
@@ -143,7 +145,8 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
 
     # cp pre chem
     if os.path.exists('{:s}/{:s}'.format(pre_chem_path,IDchemPre)):
-        os.system('cp -rf {:s}/{:s} {:s}/'.format(pre_chem_path,IDchemPre,path_sav_chem))
+        if not os.path.exists('{:s}/{:s}'.format(path_sav_chem,IDchemPre)):
+            shutil.copytree(pre_chem_path+'/'+IDchemPre,path_sav_chem)
     else:
         raise FileNotFoundError('Can not find IDchemPre: {:s}/{:s}'.format(pre_chem_path,IDchemPre))
 
@@ -205,7 +208,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                 ipre = '{:s}/{:s}_{:s}'.format(prePath,icase,IDchemPre.replace(prefix,''))
                 if os.path.exists(ipre): 
                     # copy files
-                    os.system('cp {:s}/aero/Organics_1.txt {:s}/{:d}.txt'.format(ipre,pathSSH_rdc,n))
+                    shutil.copy('{:s}/aero/Organics_1.txt'.format(ipre),'{:s}/{:d}.txt'.format(pathSSH_rdc,n))
                     paths_pre.append('{:d}.txt'.format(n))
                     n += 1
                 else:
@@ -644,7 +647,8 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                                                 Ttot,DeltaT,[locations,locs],Tnow,
                                                 'fast_compile',initfile,pathInitFiles)
                 for i,j in enumerate(paths_now):
-                    os.system('cp {1:s}/{0:s}/aero/Organics_1.txt {1:s}/{2:d}.txt'.format(j,pathSSH_rdc,i))
+                    shutil.copy('{:s}/{:s}/aero/Organics_1.txt'.format(pathSSH_rdc,j),
+                                '{:s}/{:d}.txt'.format(pathSSH_rdc,i))
                 # update chem in tmp folder
                 to_SSH_sets(path_sav_chem,IDchem+'_tmp',rc,sp,0)
                 # update size
@@ -715,19 +719,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
             rc = reaction_merge(rc,sp) # remerge
             nrea, ngas, naer = get_info(rc,sp,'') # get size
 
-        # update stage
-        if nval and naer <= naer_lim: 
-            if not tag_stage: tag_stage = 1
-            if not tag_pipe:
-                if rdcs[0] > naer: # reset
-                    rdcs = [naer,[],[]]
-                elif rdcs[0] < naer:
-                    raise ValueError('naer > rdcs[0], check values.', rdcs, naer)
-                # update 
-                rdcs[1].append([IDchem,curPath]) # name and path
-                rdcs[2].append(try_ave) # error
-
-        if naer <= 6: to_SSH_sets(path_sav_chem,IDchem,rc,sp,1) #output viz file
+        if naer < 10: to_SSH_sets(path_sav_chem,IDchem,rc,sp,1) #output viz file
         else: to_SSH_sets(path_sav_chem,IDchem,rc,sp,0)
 
         # final print out
@@ -780,6 +772,18 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                         tag_redo = 0
                 else: tag_redo = 0 # comment if not want to active tag_redo
 
+            # update stage
+            if naer <= naer_lim: 
+                if not tag_stage: tag_stage = 1
+                if not tag_pipe:
+                    if rdcs[0] > naer: # reset
+                        rdcs = [naer,[],[]]
+                    elif rdcs[0] < naer:
+                        raise ValueError('naer > rdcs[0], check values.', rdcs, naer)
+                    # update 
+                    rdcs[1].append([IDchem,curPath]) # name and path
+                    rdcs[2].append(eave) # error
+
             for f in [fall,fuse,frec]:
                 f.write('Pre-Testing IDchem {:s}: err loc: {:s}\terr max: {:6.4f}\t err ave: {:6.4f}\t err ave max: {:6.4f}\n'.format(IDchem, emax_ind, emax, eave, eave_max))
                 f.flush()
@@ -802,8 +806,11 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                                         IDchem.replace(prefix,''),ResultFolder,
                                         Ttot,DeltaT,[locations,locs],Tnow,'fast_compile',
                                         initfile,pathInitFiles)
+            # update valid IDchem
+            IDchemVad = IDchem
             for i,j in enumerate(paths_now):
-                os.system('cp {0:s}/{1:s}/aero/Organics_1.txt {2:s}/{3:d}.txt'.format(path_sav_res,j,pathSSH_rdc,i))
+                shutil.copy('{:s}/{:s}/aero/Organics_1.txt'.format(path_sav_res,j),
+                            '{:s}/{:d}.txt'.format(pathSSH_rdc,i))
         elif nval == 0:
             # special treatment for 'rm'
             if auto_type == 'rm' and not tag_rm_out and len(npres) == nauto and sum(npres.values()) == npres['rm']:
@@ -812,7 +819,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                 tag_rm_out = 1
 
         # remove previous tmp files
-        os.system('rm -rf {:s}/{:s}'.format(path_sav_chem,IDchem+'_tmp'))
+        shutil.rmtree('{:s}/{:s}'.format(path_sav_chem,IDchem+'_tmp'),ignore_errors=True)
 
         if not tag_redo:
 
@@ -928,7 +935,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
             if tag_redo: 
                 if tag_check_redo: f.write('!!!tag_redo active!!! cuz ave_err too large.\n')
                 else: f.write('!!!tag_redo active!!! try not set limitation on lump Psat.\n')
-            if tag_iauto == 0: f.write('!!!Stop running.\n')
+            if tag_iauto == 0: f.write('!!!Stop running. The final reduced mechanism is {:d}.\n'.format(IDchemVad))
             f.write('===============================================\n')
 
         for f in [fall,fuse]: f.close()
@@ -946,10 +953,11 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
             elif tag_iauto != 0: # backup
                 if tag_redo: isp = 'redobk'
                 elif tag_rm_out: isp = 'rmbk'
-                tmp = 'mv {0:s}/{1:s} {0:s}/{1:s}_{2:s};'.format(path_sav_chem,IDchem,isp)
+                shutil.move('{:s}/{:s}'.format(path_sav_chem,IDchem),
+                            '{:s}/{:s}_{:s}'.format(path_sav_chem,IDchem,isp))
                 for f in ['all','use']: 
-                    tmp += 'mv {0:s} {0:s}_{1:s};'.format(recordfile+'_'+f, isp)
-                os.system(tmp)
+                    shutil.move(recordfile+'_'+f,
+                                '{:s}_{:s}'.format(recordfile+'_'+f,isp))
 
         # update reduction strategy
         if tag_rm1 and 'rm1' not in auto_types:
@@ -971,7 +979,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                 frec.write('Select pre cases {:s} with err {:6.4f} from the list: {:}\n'.format(IDchem,err,rdcs))
     frec.close()
 
-    return IDchem, path_sav_chem # final IDchem
+    return IDchemVad, path_sav_chem # final IDchem
 
 
 if __name__ == '__main__':

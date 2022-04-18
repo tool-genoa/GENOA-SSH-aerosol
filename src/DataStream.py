@@ -10,11 +10,11 @@
 
 import os
 
+import Module as md
 from Parameters import SSHSpeciesInit,NokeepSp,cst,AeroDict,prefix
 from Functions import isfloat,compare,isint
 from ChemRelation import get_species_from_reactions, generation
 from KineticMCMtoSSH import KineticSSHtoStr, mcm_photolysis
-import Module as md
 
 # if add fake species for radicals
 tag_First = False # first time from MCM to SSH, no input SOAPorg file
@@ -596,10 +596,6 @@ def to_SSH_sets(path,chem,reactions,species,tag_complete = 1,tag_fake = False):
     # output
     path = '{:s}/{:s}/'.format(path,chem)
     os.makedirs(path, exist_ok=True)
-
-    if tag_complete == 2:
-        os.system('cp Parameters.py '+path+'/Parameter.sav')
-        os.system('cp ReductionStrategy.py '+path+'/ReductionStrategy.sav')
 
     # reactions head lines
     rout=['SET UNIT GAS MOLCM3','SET TABULATION 11 DEGREES 0. 10. 20. 30. 40. 50. 60. 70. 78. 86. 90.']
