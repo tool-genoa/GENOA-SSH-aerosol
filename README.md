@@ -1,10 +1,12 @@
-# The GENerator of Reduced Organic Aerosol Mechanisms (GENOA v1.0) is an algorithm that generates semi-explicit chemical mechanisms focusing on SOA formation.
+# The GENerator of Reduced Organic Aerosol Mechanisms (GENOA v1.0)
+
+This is an algorithm that generates semi-explicit chemical mechanisms focusing on SOA formation.
 
 - Last update: 2022/04/20
 
  
 Requirements:
--------------------------------------
+--------------
 
 1.	python 3.5 or later
 
@@ -20,4 +22,4 @@ Requirements:
 
 
 More information please see the manual.
-------------
+-----
