@@ -935,7 +935,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
             if tag_redo: 
                 if tag_check_redo: f.write('!!!tag_redo active!!! cuz ave_err too large.\n')
                 else: f.write('!!!tag_redo active!!! try not set limitation on lump Psat.\n')
-            if tag_iauto == 0: f.write('!!!Stop running. The final reduced mechanism is {:d}.\n'.format(IDchemVad))
+            if tag_iauto == 0: f.write('!!!Stop running. The final reduced mechanism is {:s}.\n'.format(IDchemVad))
             f.write('===============================================\n')
 
         for f in [fall,fuse]: f.close()
