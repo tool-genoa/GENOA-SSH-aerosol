@@ -13,7 +13,8 @@
 import os
 import shutil
 
-import Parameters
+from Parameters import pathSSH_rdc, pathSSH_ref, pathNewRes, \
+                       pathNewChem, tail, prefix
 
 #### NEED TO CHECK HERE !!!
 # put 1 for the folder need to be cleaned
