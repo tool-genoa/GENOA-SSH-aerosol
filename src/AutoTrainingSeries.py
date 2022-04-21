@@ -719,7 +719,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
             rc = reaction_merge(rc,sp) # remerge
             nrea, ngas, naer = get_info(rc,sp,'') # get size
 
-        if naer < 10: to_SSH_sets(path_sav_chem,IDchem,rc,sp,1) #output viz file
+        if naer < 20: to_SSH_sets(path_sav_chem,IDchem,rc,sp,1) #output viz file
         else: to_SSH_sets(path_sav_chem,IDchem,rc,sp,0)
 
         # final print out
