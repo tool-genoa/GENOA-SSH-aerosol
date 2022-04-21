@@ -220,7 +220,7 @@ def auto_testing(Setups = RunSets[4], IDchem = IDchem, chempath = pathNewChem,
             err_tmp = ealls['{:d}h'.format(inow)]/nt
             tmp += ' {:d} {:6.4f};'.format(inow, err_tmp)
 
-        fall.write('-----finish-----total run {:d}-----out run {:d}-----\n Case with max err: {:s}. Ave err {:6.4f}. Ave err max {:6.4f}\n'.format(nall,nout,emax_case,err_ave, err_ave_max))
+        fall.write('-----finish-----total run {:d}-----\n Case with max err: {:s}. Ave err {:6.4f}. Ave err max {:6.4f}\n'.format(nall,emax_case,err_ave, err_ave_max)) # nout
         fall.write(tmp)
         fall.close()
         #print('AT: ', out_ind,emax)
