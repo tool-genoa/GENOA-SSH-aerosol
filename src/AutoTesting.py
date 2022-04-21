@@ -103,7 +103,7 @@ def auto_testing(Setups = RunSets[4], IDchem = IDchem, chempath = pathNewChem,
     ## run test cases
     # init variables
     nall = 0 # record the total number of test cases
-    nout = 0 # record the number of cases with err > err_max
+    #nout = 0 # record the number of cases with err > err_max
     emax = 0.0 # record current max error
     eall =0.0 # sum up all error to compute the average error
     ealls = {} # all error pre Tnow
@@ -184,8 +184,8 @@ def auto_testing(Setups = RunSets[4], IDchem = IDchem, chempath = pathNewChem,
         # save info if need
         if out_file:
             for i in range(n):
-                if errs[i] > err_max: nout += 1
-                fall.write('Run:{:d}\tOut:{:d}\t{:s}\t{:6.4f}\n'.format(i+nall+1,nout,results_rdc[i].replace(ResultFolder+'/',''), errs[i]))
+                #if errs[i] > err_max: nout += 1
+                fall.write('Run:{:d}\t{:s}\t{:6.4f}\n'.format(i+nall+1,results_rdc[i].replace(ResultFolder+'/',''), errs[i]))
             fall.write('Current Max: {:6.4f}\n'.format(err_now))
             fall.flush()
 
