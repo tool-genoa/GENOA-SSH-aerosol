@@ -2,7 +2,7 @@
 
 This is an algorithm that generates semi-explicit chemical mechanisms from explict mechanism (e.g., the Master Chemical Mechanism) focusing on SOA formation.
 
-- Last update: 2022/04/20
+- Last update: 2022/04/25
 
  
 Requirements:
