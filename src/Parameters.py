@@ -72,8 +72,8 @@ RunSets=[
           'tag_hybrid': False, # use parallel in series reduction
 
           # reduction strategies
-          'auto_types':['rm','rp','lp','mg','rs','da'], # rm: remove reactions; rs: remove not used species, da: remove aerosol species, rr:remove radicals (not used now); lp: autolumping
-          'BranchRatio': [5E-2, 1E-1, 5E-1], # only for AutoRemoving, ratio_remove times, but need to set for each auto_types
+          'strategy_types':['rm','rp','lp','jp','rs','da'], # rm: remove reactions; rs: remove not used species, da: remove aerosol species, rr:remove radicals (not used now); lp: autolumping
+          'BranchRatio': [5E-2, 1E-1, 5E-1], # only for AutoRemoving, ratio_remove times, but need to set for each strategy_types
           # error analysis
           'err_ref':[0.01,0.02,0.02,0.03,0.03,0.03,0.04,0.04,0.06,0.06,0.08,0.08,0.10,0.10], # error tolerance compared to ref case
           'err_pre':[0.01,0.01,0.02,0.01,0.02,0.03,0.02,0.04,0.04,0.06,0.04,0.08,0.08,0.10], # error tolerance compared to pre case

@@ -23,7 +23,7 @@ Requirements:
 
 --------------
 
-See the [manual](http://cerea.enpc.fr/genoa/manual-genoav1.0.pdf) to know how to run GENOA simulations.
+See the GENOA_v1.0_Manual to learn more about GENOA.
 
 --------------
 

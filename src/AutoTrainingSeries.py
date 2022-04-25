@@ -33,13 +33,13 @@ from AutoTesting import auto_testing
 from ChemRelation import tree, get_species_from_reactions
 
 # default
-auto_type_name = {'rm': 'Remove reactions with branch ratios',
-                  'rm1':'Remove reactions with single product',
-                  'lp': 'Lump species',
-                  'da': 'Remove aerosols',
-                  'rs': 'Remove species',
-                  'rp': 'Jump species',
-                  'mg': 'Replace species in one reactions' }
+auto_type_name = {'rm': 'Removing reaction',
+                  'rm1':'Removing elementary-like reaction',
+                  'lp': 'Lumping',
+                  'da': 'Removing aerosols',
+                  'rs': 'Removing gas-particle partitioning',
+                  'rp': 'Jumping',
+                  'jp': 'Replacing' }
 
 auto_names = list(auto_type_name.keys())
 letters = ascii_letters + digits
@@ -49,7 +49,7 @@ NoLumps = Roptions['FreezeSpecies']
 
 def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathInitFiles = pathInitFiles, err_ref_pre = 0.50, ATSetups = RunSets[4]):
     """
-        Objectives:
+        Objectives: run GENOA reduction
 
         Inputs:
             
@@ -73,7 +73,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
     err_refs = Setups['err_ref']
     err_pres = Setups['err_pre']
 
-    auto_types = Setups['auto_types']
+    auto_types = Setups['strategy_types']
     BranchRatios = Setups['BranchRatio']
 
 
@@ -477,7 +477,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                 else: 
                     tar = lump[0]+'->'+lumppd[0][0][0] # for print info
                 
-            elif auto_type == 'mg':
+            elif auto_type == 'jp':
                 # reduction by removing reactions
                 lump, lumppd = reduce_reaction_bySpecies(rc,sp,'replace',1, frozen)
                 if len(lump) == 0: break
@@ -546,7 +546,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
             nrea0, ngas0, naer0 = get_info(rc,sp,'')
             # add special case that not check training dataset
             if tag_stage and tag_check_testing:
-                if auto_type in ['lp','rp','mg'] or tag_stage == 2: # late stage
+                if auto_type in ['lp','rp','jp'] or tag_stage == 2: # late stage
                     if naer0 < naer: tag_sim = 0
 
             if tag_sim:
@@ -942,7 +942,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
 
         # set only for pre-reduction without lp
         if tag_pre_rdc and 'lp' not in auto_types and nerr == tag_pre_rdc: # pre-reduction finished
-            auto_types = ['rm','rp','lp','mg','rs','da']
+            auto_types = ['rm','rp','lp','jp','rs','da']
             nauto = len(auto_types)
             # change iauto from
             iauto = (int(iauto/nauto)+1) * nauto
@@ -961,7 +961,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
 
         # update reduction strategy
         if tag_rm1 and 'rm1' not in auto_types:
-            auto_types = ['rm','rm1','rp','lp','mg','rs','da']
+            auto_types = ['rm','rm1','rp','lp','jp','rs','da']
             nauto = len(auto_types) # reser nauto
             BranchRatios = [1.]
             nBRT = 0
