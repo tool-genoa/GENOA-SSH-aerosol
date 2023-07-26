@@ -28,18 +28,20 @@ Requirements:
  
 
 
+
+
 Learning more about the GENOA algorithms:
 --------------
 
-GENOA v1.0
----
+- GENOA v1.0
 
-Refer to the GENOA_v1.0_Manual and [wang et al.,2022](https://doi.org/10.5194/gmd-15-8957-2022) to learn more about GENOA v1.0.
+
+Refer to the GENOA_v1.0_Manual and [Wang et al.,2022](https://doi.org/10.5194/gmd-15-8957-2022) to learn more about GENOA v1.0.
 
 [![GENOAv1.0 code archive](https://zenodo.org/badge/481260565.svg)](https://zenodo.org/badge/latestdoi/481260565)
 
-GENOA v2.0
----
+
+- GENOA v2.0
 
 The GENOA_v2.0_Manual will be made available soon.
 
