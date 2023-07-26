@@ -43,5 +43,7 @@ Refer to the GENOA_v1.0_Manual and [Wang et al.,2022](https://doi.org/10.5194/gm
 
 - GENOA v2.0
 
+[![DOI](https://zenodo.org/badge/481260565.svg)](https://zenodo.org/badge/latestdoi/481260565)
+
 The GENOA_v2.0_Manual will be made available soon.
 
