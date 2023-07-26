@@ -30,10 +30,10 @@ void unifac_ssh(int &nmols, int &nfunc, Array<double, 2> &groups, Array<double, 
       for (i=0;i<nmols;i++)
         Xmol(i)/=xtot;
   
-      static Array <long double, 1> theta_org,phi_org;
-      static Array <long double, 1> surface_fraction_org;
-      static Array <long double, 1> group_activity_org;
-      static Array <long double, 1> sum2_org;    
+      static Array <double, 1> theta_org,phi_org;
+      static Array <double, 1> surface_fraction_org;
+      static Array <double, 1> group_activity_org;
+      static Array <double, 1> sum2_org;    
       if (int(phi_org.size())!=nmols)
         {
           theta_org.resize(nmols);
@@ -48,9 +48,9 @@ void unifac_ssh(int &nmols, int &nfunc, Array<double, 2> &groups, Array<double, 
         }
       
       surface_fraction_org=0.0; 
-      long double Lmean=0.0;
-      long double sumtheta=0.0;
-      long double sumphi=0.0;
+      double Lmean=0.0;
+      double sumtheta=0.0;
+      double sumphi=0.0;
       for (i=0;i<nmols;i++)
         {
           theta_org(i)=Xmol(i)*Qparam(i);
@@ -70,7 +70,7 @@ void unifac_ssh(int &nmols, int &nfunc, Array<double, 2> &groups, Array<double, 
         }      
       
       //Compute surface fraction  
-      long double sum_surf=0.0;
+      double sum_surf=0.0;
       for (i=0;i<nmols;i++)
         {          
           for (j=0;j<nfunc;j++)
@@ -100,7 +100,7 @@ void unifac_ssh(int &nmols, int &nfunc, Array<double, 2> &groups, Array<double, 
       
       for (i=0;i<nmols;i++)
         {
-          long double sum1=0.0;         
+          double sum1=0.0;         
           for (j=0;j<nfunc;j++)
             if (groups(j,i)>0.0)
               sum1+=groups(j,i)*QG(j)*(group_activity_org(j)-group_activity_mol(j,i));                	      
@@ -114,7 +114,7 @@ void unifac_ssh(int &nmols, int &nfunc, Array<double, 2> &groups, Array<double, 
 
 void unifac_aq_ssh(int &nmols, int &nions, int &nfunc, Array<double, 2> &groups, Array<double, 1> &Xmol,
                    Array<double, 1> &Xions,
-                   Array<double, 2> &Inter2, //Array<long double, 2> &InterB, Array<long double, 2> &InterC, 
+                   Array<double, 2> &Inter2, //Array<double, 2> &InterB, Array<double, 2> &InterC, 
                    Array<double,1> &RG, Array <double, 1> &QG,
                    Array<double, 1> &Rparam, Array <double, 1> &Qparam, Array <double,1> &Lparam,
                    Array <double, 2> &group_activity_mol,
@@ -150,15 +150,15 @@ void unifac_aq_ssh(int &nmols, int &nions, int &nfunc, Array<double, 2> &groups,
 
       //cout << Xmol << Xions << endl;
   
-      static Array <long double, 1> theta,theta_ions,phi,phi_ions;
-      static Array <long double, 1> surface_fraction,surface_fraction_ions;
-      static Array <long double, 1> group_activity;
+      static Array <double, 1> theta,theta_ions,phi,phi_ions;
+      static Array <double, 1> surface_fraction,surface_fraction_ions;
+      static Array <double, 1> group_activity;
       
-      //Array <long double, 2> group_activity_mol,sum2mol;
+      //Array <double, 2> group_activity_mol,sum2mol;
       //group_activity_mol.resize(nfunc,nmols);
       //sum2mol.resize(nfunc,nmols);
       
-      static Array <long double, 1> sum2;
+      static Array <double, 1> sum2;
          
       if (int(phi.size())!=nmols)
         {
@@ -172,7 +172,7 @@ void unifac_aq_ssh(int &nmols, int &nions, int &nfunc, Array<double, 2> &groups,
            phi_ions.resize(nions);
            surface_fraction_ions.resize(nions);
         }
-          //Array <long double, 2> surface_fraction_mol;
+          //Array <double, 2> surface_fraction_mol;
 
       if (int(surface_fraction.size())!=nfunc)
         {
@@ -180,9 +180,9 @@ void unifac_aq_ssh(int &nmols, int &nions, int &nfunc, Array<double, 2> &groups,
           group_activity.resize(nfunc);
           sum2.resize(nfunc);
         }
-      long double Lmean=0.0;
-      long double sumtheta=0.0;
-      long double sumphi=0.0;
+      double Lmean=0.0;
+      double sumtheta=0.0;
+      double sumphi=0.0;
       for (i=0;i<nmols;i++)
         {
           theta(i)=Xmol(i)*Qparam(i);
@@ -234,10 +234,10 @@ void unifac_aq_ssh(int &nmols, int &nions, int &nfunc, Array<double, 2> &groups,
       //surface_fraction_mol.resize(nfunc,nmols);      
       surface_fraction=0.0;
       //surface_fraction_mol=0.0;
-      long double sum_surf=0.0;
+      double sum_surf=0.0;
       for (i=0;i<nmols;i++)
         {
-          //long double sum_surf_mol=0.0;
+          //double sum_surf_mol=0.0;
           for (j=0;j<nfunc;j++)
             if (groups(j,i)>0.0)
               {
@@ -263,9 +263,9 @@ void unifac_aq_ssh(int &nmols, int &nions, int &nfunc, Array<double, 2> &groups,
       for (i=0;i<nions;i++)         
         surface_fraction_ions(i)/=sum_surf;
       /*
-      long double tval1=1.0/298.15-1.0/Temperature;
-      long double tval2=298.15/Temperature-1.0+log(Temperature/298.15);
-      Array<long double,2> Inter2;
+      double tval1=1.0/298.15-1.0/Temperature;
+      double tval2=298.15/Temperature-1.0+log(Temperature/298.15);
+      Array<double,2> Inter2;
       Inter2.resize(nfunc,nfunc);
       if (temperature_dependancy)
 	for (j=0;j<nfunc;j++)
@@ -319,7 +319,7 @@ void unifac_aq_ssh(int &nmols, int &nions, int &nfunc, Array<double, 2> &groups,
       
       for (i=0;i<nmols;i++)
         {
-          long double sum1=0.0;
+          double sum1=0.0;
           for (j=0;j<nfunc;j++)
             if (groups(j,i)>0.0)           
               sum1+=groups(j,i)*QG(j)*(group_activity(j)-group_activity_mol(j,i));                

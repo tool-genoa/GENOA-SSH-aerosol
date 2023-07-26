@@ -1,20 +1,28 @@
-# -*- coding: utf-8 -*-
-#================================================================================
+# ================================================================================
 #
-#     GENOA v1.0: the GENerator of reduced Organic Aerosol mechanism
+#   GENOA v2.0: the GENerator of reduced Organic Aerosol mechanism
 #
-#     Copyright (C) 2022 CEREA (ENPC) - INERIS.
-#     GENOA is distributed under GPL v3.
+#    Copyright (C) 2023 CEREA (ENPC) - INERIS.
+#    GENOA is distributed under GPL v3.
 #
-#================================================================================
+# ================================================================================
+#
+#  KineticMCMtoPython.py converts the knietic rate contants from MCM format
+#
+#   to a format can be executed by Python. The converted format is used in 
+#
+#   reductions via lumping.
+#
+# ================================================================================
 
 import math
 import numpy as np
 
 from Functions import cosx_max
-from Parameters import concsSpecies,initfile,Tnow, prefix, NokeepSp
+from Parameters import concsSpecies,initfile, \
+                       Tnow, prefix, NokeepSp
 from KineticMCMtoSSH import mcm_photolysis
-# speciesfile
+from SSHResultProcess import ref_conc
 
 # FORMAT CONVERT
 #MCMformat=['EXP','exp','@']#'D-','D+'
@@ -23,7 +31,7 @@ from KineticMCMtoSSH import mcm_photolysis
 def update_kinetic_rate(locs, IDchem_fake, path_fake, pathInitFiles, RefConcRead):
     #IDchem_fake, path_fake = pathNewRes, pathInitFiles = pathInitFiles, RefConcRead = pathNewRes+'/'+IDchem_fake):
     """get reference concentrations used for reduction from the conditions given by locs"""
-    from SSHResultProcess import ref_conc
+
     # default CONCENTRATIONS for TBs ['M','O2','N2','H2O','H2','RO2'] # Unit: molecule/cm3
     # M=2.55E+19, O2=0.2095*M, N2=0.7809*M, H2=0.0
 
@@ -55,12 +63,13 @@ def update_kinetic_rate(locs, IDchem_fake, path_fake, pathInitFiles, RefConcRead
         for j in Tnow: 
             refconc_paths.append('{:s}/{:s}/c_432000_3600_{:d}h_{:s}'.format(path_fake, lc,j, IDchem_fake.replace(prefix,'')))
 
-
-
     # get ref conc and save
-    refconc_file = RefConcRead + str(len(locs))
-    ref_conc(refconc_paths,species='all',Type='sum',radical='FA',savname=refconc_file,write=True)#, slist = speciesfile.replace('.mol','.species'))
-
+    if RefConcRead:
+        refconc_file = RefConcRead + str(len(locs))
+        ref_conc(refconc_paths,species='all',Type='sum',radical='FA',savname=refconc_file,write=True)#, slist = speciesfile.replace('.mol','.species'))
+    else:
+        refconc_file = None
+        
     # get concs
     concs_ave, concs_min = get_gas_cst(gas_path, concsSpecies)
     # get average TEMP, pressure, RH
@@ -280,6 +289,9 @@ def kinetic_MCM_to_value(rateStr):
     """return a float value of kineitc rate"""
 
     TEMP = 245.
+
+    # For TOL
+    if 'Tab' in rateStr or 'TROE' in rateStr: return 0
 
     if 'EXP' in rateStr: rateStr = rateStr.replace('EXP','math.exp')
     elif 'exp' in rateStr: rateStr = rateStr.replace('exp','math.exp')

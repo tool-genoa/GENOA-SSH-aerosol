@@ -113,7 +113,9 @@ contains
 		write(unit=10,FMT=*)  'Without coagulation'
 	end if
 	if (with_nucl == 1) then 
-		write(unit=10,FMT=*)  'With nucleation', '	','nucl_model', nucl_model
+		write(unit=10,FMT=*)  'With nucleation', '	','nucl_model_binary', nucl_model_binary
+		write(unit=10,FMT=*)  'With nucleation', '	','nucl_model_ternary', nucl_model_ternary
+		write(unit=10,FMT=*)  'With nucleation', '	','nucl_model_hetero', nucl_model_hetero
 	else
 		write(unit=10,FMT=*)  'Without nucleation'
 	end if
@@ -127,7 +129,6 @@ contains
 
    end subroutine ssh_save_report
 
-!genoa
 
   subroutine ssh_init_output_conc_sim()
 
@@ -140,21 +141,20 @@ contains
     cmd = trim('mkdir -p '// trim(output_directory) //"/aero/")
     call system(cmd)
 
+    ! organics
+    output_filename = trim(output_directory) // "/aero/Organics_1" // trim(out_type(output_type))
+    ! Remove if output files exist
+    inquire (file = output_filename, exist = file_exists)
+    if (file_exists) then
+        open(unit=100, file = output_filename, status='old', iostat=stat)
+        if (stat == 0) close(100, status='delete')
+    endif
+    ! creative new empty file 
+    open(unit=11,file=output_filename, status="new")
+    !close(100)
+
     ! aerosols
     do b = 1, N_size
-        ! organics
-        output_filename = trim(output_directory) // "/aero/Organics_"// trim(str(b)) // trim(out_type(output_type))
-        ! Remove if output files exist
-        inquire (file = output_filename, exist = file_exists)
-        if (file_exists) then
-            open(unit=100, file = output_filename, status='old', iostat=stat)
-            if (stat == 0) close(100, status='delete')
-        endif
-        ! creative new empty file 
-        open(unit=b+10,file=output_filename, status="new")
-        !close(100)
-
-        ! other outputs
         do s = 1, n_output_aero
             output_filename = trim(output_directory) // "/aero/"&
             //trim(output_aero(s)) &
@@ -165,14 +165,14 @@ contains
                 open(unit=100, file = output_filename, status='old', iostat=stat)
                 if (stat == 0) close(100, status='delete')
             endif
-            ! creative new empty file 
-            open(unit=s*N_size+b+10 ,file=output_filename, status="new")
+            ! creative new empty file ! totoal: Nb*Ns
+            open(unit=s+(b-1)*n_output_aero+11 ,file=output_filename, status="new")
             !close(100)
         enddo
     end do
 
     ! add output for gas
-    if (n_output_gas.gt.0) then
+    if (n_output_gas.gt.0.) then
         cmd = trim('mkdir -p '// trim(output_directory) //"/gas/")
         call system(cmd)
     endif
@@ -187,7 +187,7 @@ contains
             if (stat == 0) close(100, status='delete')
         endif
         ! creative new empty file 
-        open(unit=(n_output_aero+1)*N_size+s+10,file=output_filename, status="new")
+        open(unit=s+N_size*n_output_aero+11,file=output_filename, status="new")
         !close(100)
     enddo
     ! gas
@@ -197,7 +197,7 @@ contains
   subroutine ssh_save_concentration_sim(t)
 
     integer :: s, b, i, j, jesp, t
-    double precision :: conc_save
+    !double precision :: tmp
     !character (len=100) output_filename
 
     concentration_mass_tmp = 0.d0
@@ -210,33 +210,113 @@ contains
     enddo
 
     ! **** output_directory/aero/
-    do b = 1, N_size
-        ! compute total SOA
-        conc_save = 0.d0
-        do s = 1, N_aerosol ! remove water and no-organics
-            if (aerosol_type(s).ne. 4) cycle
-            if (aerosol_species_name(s).eq.'PBiMT') cycle
-            if (aerosol_species_name(s).eq.'PSOAlP') cycle
-            conc_save = conc_save + concentration_mass_tmp(b, s)
-        end do
-        ! save organics
-        !output_filename = trim(output_directory) // "/aero/Organics_"// trim(str(b)) // trim(out_type(output_type))
-        !open(unit=b+10,file=output_filename, status="old", position = "append")
-            write(b+10,*) conc_save
-            total_soa(t) = conc_save ! save total soa for error analysis
-        !close(100)
+    if (nout_soa.eq.1) then ! only output total soa
+        do b = 1, N_size
+          i = 1
+          ! compute total SOA
+          total_soa(i,t) = 0d0
+          do s = 1, N_aerosol ! remove water and no-organics
+            !if (aerosol_species_name(s).eq.'PBiMT') cycle
+            !if (aerosol_species_name(s).eq.'PSOAlP') cycle
+            if (aerosol_type(s).ne.4.or.Index_groups(s).lt.0) cycle ! only keep organics from primary vocs
+            
+            total_soa(i,t) = total_soa(i,t) + concentration_mass_tmp(b, s)
+          end do
 
-        ! save outputs
-        do i = 1, n_output_aero
-          s = output_aero_index(i)
-          !output_filename = trim(output_directory) // "/aero/"&
-          !      //trim(aerosol_species_name(s))//"_"&
-          !      // trim(str(b)) // trim(out_type(output_type))
-          !open(unit=100,file=output_filename, status="old", position = "append")
-            write(i*N_size+b+10,*) concentration_mass_tmp(b, s)
-          !close(100)
+          ! save organics
+          !write(11,*) total_soa(i,t)
+
+          ! save outputs
+          do i = 1, n_output_aero
+             s = output_aero_index(i)
+             write(i+(b-1)*n_output_aero+11,*) concentration_mass_tmp(b, s)
+          enddo
+        end do
+    else ! only for MT
+        do b = 1, N_size
+            do i = 1, nout_soa
+              ! compute total SOA
+              total_soa(i,t) = 0d0
+              do s = 1, N_aerosol ! remove water and no-organics
+                !if (aerosol_species_name(s).eq.'PBiMT') cycle
+                !if (aerosol_species_name(s).eq.'PSOAlP') cycle
+                if (aerosol_type(s).ne.4.or.Index_groups(s).lt.0) cycle ! only keep organics from primary vocs
+                !if (i.ne.nout_soa.and.Index_groups(s).ne.i) cycle ! individual soa
+
+                ! only for MTs
+                ! nout_soa = 1: apinene, Index_groups(s) = 1,2,5,7; != 3,4,6
+                !if (i.eq.2.and.any((/3,4,6/)==Index_groups(s))) cycle
+                ! nout_soa = 2: bpinene, Index_groups(s) = 1,3,5,6; != 2,4,7
+                !if (i.eq.3.and.any((/2,4,7/)==Index_groups(s))) cycle
+                ! nout_soa = 3: limonene,Index_groups(s) = 1,4,6,7; != 2,3,5
+                !if (i.eq.4.and.any((/2,3,5/)==Index_groups(s))) cycle
+                if (i.ne.1 .and. Index_groups(s).ne.i-1) cycle
+                total_soa(i,t) = total_soa(i,t) + concentration_mass_tmp(b, s)
+              end do
+            enddo
+            ! save organics
+            !output_filename = trim(output_directory) // "/aero/Organics_"// trim(str(b)) // trim(out_type(output_type))
+            !open(unit=b+10,file=output_filename, status="old", position = "append")
+            !write(11,*) (total_soa(i,t),i = 1, nout_total)
+            !total_soa(t) = tmp ! save total soa for error analysis
+            !close(100)
+
+            ! save outputs
+            do i = 1, n_output_aero
+              s = output_aero_index(i)
+              !output_filename = trim(output_directory) // "/aero/"&
+              !      //trim(aerosol_species_name(s))//"_"&
+              !      // trim(str(b)) // trim(out_type(output_type))
+              !open(unit=100,file=output_filename, status="old", position = "append")
+                write(i+(b-1)*n_output_aero+11,*) concentration_mass_tmp(b, s)
+              !close(100)
+            enddo
+        end do
+    !else
+    !    print*,'nout_soa not in 1,4. please check.',nout_soa
+    !    stop
+    endif
+
+    ! get RO2 groups concs
+    if (nRO2_group.gt.0) then
+        do b = 1, nRO2_group
+            total_soa(b+nout_soa,t)=0d0
+            do i = 1, nRO2_chem
+              s = RO2groups(i) ! index of RO2 group
+              j = RO2index(i)  ! index of RO2 species
+
+              ! only for MTs
+              if (b.ne.nRO2_group.and.s.ne.b) cycle
+              ! nout_soa = 1: apinene, Index_groups(s) = 1,2,5,7; != 3,4,6
+              !if (b.eq.1.and.any((/3,4,6/) == s)) cycle
+              ! nout_soa = 2: bpinene, Index_groups(s) = 1,3,5,6; != 2,4,7
+              !if (b.eq.2.and.any((/2,4,7/) == s)) cycle
+              ! nout_soa = 3: limonene,Index_groups(s) = 1,4,6,7; != 2,3,5
+              !if (b.eq.3.and.any((/2,3,5/) == s)) cycle
+              !if (t.eq.1.and.concentration_gas_all(j).gt.0d0) print*,j,trim(species_name(j)),concentration_gas_all(j)
+              total_soa(b+nout_soa,t)=total_soa(b+nout_soa,t)+ concentration_gas_all(j)
+
+            enddo
         enddo
-    end do
+        ! total RO2
+        !if (iRO2.ne.0) then
+        !  total_soa(nout_total,t) = concentration_gas_all(iRO2)
+        !else
+        !  do i = 1, nRO2_chem
+        !      j = RO2index(i)  ! index of RO2 species
+        !      total_soa(nout_total,t)=total_soa(nout_total,t)+ concentration_gas_all(j)
+        !  enddo
+        !endif
+    endif
+
+    ! round values
+    do i = 1, nout_total
+        j = anint(total_soa(i,t)*1d6)
+        total_soa(i,t) = j/1d6
+    enddo
+    ! output total SOA
+    write(11,'(999E15.6)') (total_soa(i,t),i = 1, nout_total)
+    !write(11,*) (total_soa(i,t),i = 1, nout_total)
 
     ! gas
     do i = 1, n_output_gas
@@ -244,7 +324,7 @@ contains
       !output_filename = trim(output_directory) // "/gas/" &
       !   //trim(species_name(s))// trim(out_type(output_type))
       !open(unit=100,file=output_filename, status='old', position = "append")
-       write((n_output_aero+1)*N_size+i+10,*) concentration_gas_all(s) 
+       write(i+N_size*n_output_aero+11,*) concentration_gas_all(s) 
       !close(100)
     enddo
     ! gas
@@ -256,19 +336,18 @@ contains
     double precision :: conc_save
 
     ! **** output_directory/aero/
+    close(11)
+    ! aero
     do b = 1, N_size
-        close(b+10)
-        ! save outputs
         do i = 1, n_output_aero
-           close(i*N_size+b+10)
+           close(i+(b-1)*n_output_aero+11)
         enddo
     end do
     ! gas
     do i = 1, n_output_gas
-      close((n_output_aero+1)*N_size+i+10)
+      close(i+N_size*n_output_aero+11)
     enddo
   end subroutine ssh_close_file_sim
-!genoa
 
 
   subroutine ssh_save_concentration()
@@ -396,7 +475,7 @@ contains
         close(100)
     end do
 
-    ! save organics genoa
+    ! save organics
     ! **** output_directory/aero/
     do b = 1, N_size
         ! compute total SOA
@@ -412,7 +491,7 @@ contains
             write(100,*) conc_save
         close(100)
     end do
-    ! genoa
+
   end subroutine ssh_save_concentration
 
 
@@ -506,7 +585,7 @@ contains
        end do
     end do
 
-    ! total organics genoa
+    ! total organics
     do b = 1, N_size
         output_filename = trim(output_directory) // "/aero/Organics_"// trim(str(b)) // trim(out_type(output_type))
         ! Remove if output files exist
@@ -519,7 +598,6 @@ contains
         open(unit=100,file=output_filename, status="new")
         close(100)
     end do
-! genoa
 
   end subroutine ssh_init_output_conc
 

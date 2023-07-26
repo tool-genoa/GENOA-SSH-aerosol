@@ -1,81 +1,99 @@
-# -*- coding: utf-8 -*-
-#================================================================================
+# ================================================================================
 #
-#     GENOA v1.0: the GENerator of reduced Organic Aerosol mechanism
+#   GENOA v2.0: the GENerator of reduced Organic Aerosol mechanism
 #
-#     Copyright (C) 2022 CEREA (ENPC) - INERIS.
-#     GENOA is distributed under GPL v3.
+#    Copyright (C) 2023 CEREA (ENPC) - INERIS.
+#    GENOA is distributed under GPL v3.
 #
-#================================================================================
+# ================================================================================
+#
+#  Module.py contains three classes: Species, Reaction, and Kinetic. 
+#
+#  These classes are utilized to handle chemical species and reactions in GENOA.
+#
+# ================================================================================
 
 import json
+from copy import deepcopy
 
 from Functions import duplicates,trim_items, \
-                      isfloat, compare
-from Parameters import NokeepSp,AeroDict
+                      isfloat
+from Parameters import NokeepSp
 from KineticMCMtoSSH import MCMtoSSH_kinetic_rate
 from KineticMCMtoPython import kinetic_MCM_to_value
 
-# import MolProperty as mp # not used
+### Need to install openbabel and UManSysProp
+# decomment to use some functions in this module
+#import MolProperty as mp
 
 sav_species=['name','nameUsed','status',
              'lump','jump',
              'organic','RO2','Radical','condensed',
-             'SMILES','InChI','mass','formula','source',
+             'SMILES','InChI','mass','formula','source','groupID',
              'psat_torr','psat_atm','dHvap_KJ','gamma','henry','Kp',
-             'temp','DU','ratios','functionalGroups','SOAPStructure','generation']
+             'temp','DU','ratios','functionalGroups',
+             'SOAPStructure','non_volatile','generation']
 
 class Species:
     """record properties of a given species"""
     def __init__(self,name=None):
-        self.name=name # Name
-        self.nameUsed=None # if set, name changed in lumping
+
+        self.status=True
+         
+        # species name
+        self.name=name
+        # name changed dur to lumping
+        self.nameUsed=None
 
         # properties
-        self.organic=False
-        self.RO2=False 
-        self.Radical=False
-        self.condensed=False
+        self.organic=False # if it is organic
+        self.RO2=False     # if it is a peroxy radical (consider in the RO2 pool)
+        self.Radical=False # if it is a radical
+        self.condensed=False # if it is condensable
 
-        self.SMILES='-' # smiles
+        # smiles, used to compute Psat
+        self.SMILES='-'
+        # read from MCM, currently not used in reduction
         self.InChI=None
-        self.mass=0. #MW
-        self.formula=''
+        self.mass=0. # MWs
+        self.formula='' # formula in the format: C[i]H[i]N[i]O[i], i is number
 
-        #reduction
-        self.lump=[] # if set, not output
-        self.jump=[]
-        self.remove=[]
+        # reduction related
+        self.lump=[] # lumped species: output "m"+name in .viz file if it is not []
+        self.jump=[] # jumped species
+        self.remove=[] # removed species
 
-        # for SSH output
-        self.type=4 #Type
-        self.groupID=2 #group ID
+        # for SSH output - see SSH-aerosol aerosol list for more info
+        self.type=4    # Type No. in SSH-aerosol
+        self.groupID=2 # group ID: organic
         self.coll_fac=687.
         self.mole_diam=8.39
         self.surf_tens=30.e-03
         self.accomod=1.0
         self.mass_dens=1.30e-06
-        self.non_volatile=0
+        self.non_volatile=0 # if it is a non-volatile compound
 
-        self.psat_torr=0.0 #Saturation vapor pressure at Tref (torr)
-        self.psat_atm=0.0 #Saturation vapor pressure at Tref (atm)
-        self.dHvap_KJ=0.0 #Enthalpy of vaporization (kJ/mol)
-        self.gamma=None #Activity coefficient at infinite dilution in water
-        self.henry=0.0 #Henry's Law constant (M/atm, mol/atm*l)
-        self.Kp=None
+        self.psat_torr=0.0 # Saturation vapor pressure at Tref (torr)
+        self.psat_atm=0.0  # Saturation vapor pressure at Tref (atm)
+        self.dHvap_KJ=0.0  # Enthalpy of vaporization (kJ/mol)
+        
+        # those values may not be updated after reduction: recompute in SSH-aerosol
+        self.gamma=None    # Activity coefficient at infinite dilution in water
+        self.henry=0.0     # Henry's Law constant (M/atm, mol/atm*l)
+        self.Kp=None       # partitioning coefficient
 
-        self.temp= 298. #Temperature of reference (K)
+        self.temp= 298.    # Temperature of reference (K)
 
-        self.functionalGroups={}
-        self.ratios=None
-        self.DU=None
-        self.pymol=None
-        self.status=True
-        self.generation = -1
+        self.functionalGroups={} # No. of some functional groups (used to define lumpable species)
+        self.ratios=None # atomic ratios: OM/OC, N/C, H/C, O/C
+        self.DU=None     # degree of unsaturation
+        self.pymol=None  # pymol format: computed by openbabel from smiles
 
-        self.SOAPStructure = None
+        self.generation = -1 # number of generation: -1 not computed
 
-        self.source = [] # default
+        self.SOAPStructure = None # No. of non-zero function groups in SSH-aerosol vector format
+
+        self.source = [] # primary VOCs
 
     def add_info(self,key,value,check=False):
         if check:
@@ -100,7 +118,7 @@ class Species:
             return None
 
 
-    def fromTest(self,text):
+    def fromText(self,text):
         for i in text:
             tmp = i.split('\t')
             if len(tmp) == 2: 
@@ -108,7 +126,7 @@ class Species:
                 if isinstance(tmp[1],str): tmp[1] = str(tmp[1])
                 self.add_info(tmp[0],tmp[1],True)
 
-    def to_species_list_aer(self, Type = 'smiles', firstRun = False, henry = 0.0):
+    def to_species_list_aer(self, Type = 'smiles', firstRun = False):
         if self.organic:
             spr='\t'
             line='P{:s}'.format(self.name)
@@ -120,13 +138,13 @@ class Species:
 
             content=[self.type,self.groupID, self.mass,self.name,self.coll_fac,
                     self.mole_diam,self.surf_tens,self.accomod,self.mass_dens,
-                    self.non_volatile,tmp,self.psat_torr,self.dHvap_KJ, henry]
+                    self.non_volatile,'BOTH',tmp,self.psat_torr,self.dHvap_KJ]
             # remove precursor if it is the 1st run
             if firstRun: content[3] = '--'
 
             style=['{:d}','{:d}','{:6.2f}','{:s}','{:5.2E}',
                     '{:5.2E}','{:5.2E}','{:5.2E}','{:5.2E}',
-                    '{:d}','{:s}','{:5.2E}','{:5.2E}', '{:5.2E}']
+                    '{:d}','{:s}','{:s}','{:5.2E}','{:5.2E}']
             for i in range(len(content)):
                 tmp=spr+style[i].format(content[i])
                 if style[i]=='E': tmp=tmp.replace('E','D')
@@ -160,9 +178,9 @@ class Species:
         self.psat_torr=self.psat_atm*760. # unit
 
         # non-volatile
-        if self.psat_atm <= AeroCriteria['Psat_NVOC'] : 
+        if self.psat_atm and self.psat_atm <= AeroCriteria['Psat_NVOC'] : 
             print('species ',self.name,' is non_volatile, with P_sat = ',self.psat_atm,' < ',AeroCriteria['Psat_NVOC'])
-            #self.non_volatile = 1
+            self.non_volatile = 1
 
         # Hvap
         self.dHvap_KJ = mp.enthalpy_vaporization(self.pymol,AeroCriteria['vpType'])/1000. # unit in KJ
@@ -171,10 +189,13 @@ class Species:
         self.functionalGroups = mp.functional_groups(self.pymol)
 
         # is RO2? Radicals? Condensed species? 
-        self.is_type(AeroCriteria['Psat_aer'])
+        self.is_type(AeroCriteria['Psat_aero'])
 
         # SOAPstructure ?
-        #self.SOAPStructure = mp.SOAPStructure(self.pymol)
+        self.SOAPStructure = mp.toSOAPStructure(self.pymol)
+
+        # atomic ratios and degree of unsaturation
+        self.ratios,self.DU=mp.organic_ratios_and_du(self.pymol)
 
     def update_advanced(self,AeroCriteria):
 
@@ -212,13 +233,13 @@ class Species:
         self.functionalGroups = mp.functional_groups(self.pymol)
 
         # is RO2? Radicals? Condensed species? 
-        self.is_type(AeroCriteria['Psat_aer'])
+        self.is_type(AeroCriteria['Psat_aero'])
 
         # SOAPstructure ?
-        #self.SOAPStructure = mp.SOAPStructure(self.pymol)
+        self.SOAPStructure = mp.toSOAPStructure(self.pymol)
 
         # activity coefficient
-        self.gamma=mp.activity_coefficient_inf(self.pymol,self.temp)
+        #self.gamma=mp.activity_coefficient_inf(self.pymol,self.temp)
 
         # henry's law constant (M/atm)
         # H = 1000*760/(18.0*GAMMAinf*Psat)
@@ -233,10 +254,16 @@ class Species:
     def update_Psat(self,AeroCriteria):
 
         # check
-        if not self.status or self.pymol is None: return None
+        if not self.status: return None
+        if self.pymol is None:
+            if self.SMILES != '-':
+                self.pymol = mp.get_pybelmol(self.SMILES)
+            else:
+                return None
 
         # psat
         self.psat_atm = mp.saturation_vapor_pressure(self.pymol,AeroCriteria['vpType'],self.temp)
+
         self.psat_torr=self.psat_atm*760. # unit
 
         # Hvap
@@ -244,7 +271,7 @@ class Species:
 
         # henry's law constant (M/atm)
         # H = 1000*760/(18.0*GAMMAinf*Psat)
-        self.henry = 1000/(18*self.gamma*self.psat_atm)
+        if self.gamma: self.henry = 1000/(18*self.gamma*self.psat_atm)
 
     def update_mass(self):
 
@@ -257,7 +284,8 @@ class Species:
 
     def is_type(self,Psat):
         
-        if self.pymol.spin>1 or '[O+]' in self.SMILES or '[O]' in self.SMILES:
+        #if self.pymol.spin>1 or '[O+]' in self.SMILES or '[O]' in self.SMILES:
+        if '[O+]' in self.SMILES or '[O]' in self.SMILES:
             #print('spin==',self.pymol.spin,self.name,self.SMILES)
             self.Radical=True
             if self.functionalGroups == {} : self.functionalGroups = mp.functional_groups(self.pymol)
@@ -265,10 +293,10 @@ class Species:
             if self.name[-2:] == 'O2': self.RO2=True
             if self.name[-2:] not in ['OO','O2','O3']:
                 if self.name[-1:] != 'O':
-                    print('MD: radicals not in O, OO, O2, O3: ',self.name)
+                    print('MD: radicals not in O, OO, O2, O3: ',self.name,self.pymol.spin)
 
         if not self.Radical:
-            if Psat ==0.0 or self.psat_atm <= Psat : 
+            if Psat == 0.0 or self.psat_atm <= Psat : 
                 #print(self.name,self.psat_atm,Psat,self.psat_atm <= Psat)
                 self.condensed=True
 
@@ -277,7 +305,7 @@ class Species:
 
         iStr = self.SOAPStructure
         tmp = ("  double group_tmp_"+self.name+" [] = {")
-        tmp0 = [0.0] * 56
+        tmp0 = [0.0] * 60
         for k in range(len(iStr[0])):
             tmp0[iStr[0][k]] = iStr[1][k]
         for k in range(len(tmp0)):
@@ -313,7 +341,7 @@ class Species:
                     else: 
                         tmp_all+=('  {:s}.aq_type="none";\n'.format(self.name))
                 elif 'nonvolatile' in k:
-                    if self.psat_atm <= 1E-14: #AeroCriteria['Psat_NVOC']: 
+                    if self.psat_atm <= AeroCriteria['Psat_NVOC']: 
                         tmp_all+=('  {:s}.nonvolatile=true;\n'.format(self.name))
                     else:
                         tmp_all+=('  {:s}.nonvolatile=false;\n'.format(self.name))
@@ -331,7 +359,7 @@ class Species:
     def VectorinText(self):
         tmp = ""        
         if self.SOAPStructure is not None:
-            for i in range(56):
+            for i in range(60):
                 if i in self.SOAPStructure[0]: tmp += '&{:5.2E}'.format(self.SOAPStructure[1][self.SOAPStructure[0].index(i)])
                 else: tmp += '&{:5.2E}'.format(0.0)
         #else: raise AttributeError('species '+self.name+' has SOAPstructure None')
@@ -341,14 +369,18 @@ class Species:
 class Reaction:
     """record a chemical reaction"""
     def __init__(self):
-        self.reactants=[]
-        self.ratiosRC=[]
-        self.products=[] 
-        self.ratiosPD=[]       
-        self.rate=Kinetic()
+    
         self.status=True
-        self.type=None
-        self.species=None
+            
+        self.reactants=[] # list of reactants
+        self.ratiosRC=[]  # list of reactant ratios (default 1)
+        self.products=[]  # list of products
+        self.ratiosPD=[]  # list of profuct ratios (default 1)
+
+        self.rate=Kinetic() # kinetic contant
+        self.type=None      # based on kinetic, used to merge reaucitons
+
+        self.species=None # related species
 
     def record_product(self,pd,rt):
         """record a single product and its ratio"""
@@ -367,6 +399,8 @@ class Reaction:
             self.ratiosRC.append(rt)
 
     def check_type(self):
+        """ Check the reaction type"""
+        
         # get type from the number of reactants
         self.type = len(self.reactants)
         # trim species
@@ -416,6 +450,9 @@ class Reaction:
 
         # inside check
         for n in range(2):
+            # check length
+            if len(sps[n]) != len(rts[n]):
+                raise ValueError('len of sps and rts are not the same.',n,sps[n],rts[n])
             i = 0
             while i < len(sps[n]):
                 lists= duplicates(sps[n],sps[n][i])
@@ -453,9 +490,30 @@ class Reaction:
         # add arrow
         rline+=' -> '
 
-        # add products and ratio
-        rcn=self.products
-        rts=self.ratiosPD
+        # change pd if clean version
+        if Type == 'clean': # clean version
+            # add products and ratio
+            rcn=deepcopy(self.products)
+            rts=deepcopy(self.ratiosPD)
+            
+            # remove products
+            tmp = list(set(self.products)&set(NokeepSp))
+            for i in tmp:
+                j = rcn.index(i) # index
+                rcn.pop(j)
+                rts.pop(j)
+                
+            # add reactants
+            tmp = list(set(self.reactants)&set(NokeepSp))
+            for i in tmp:
+                rcn.append(i)
+                rts.append(1.0)
+                
+        else: # read but not changed
+            rcn=self.products
+            rts=self.ratiosPD
+            
+
         for j in range(len(rcn)):
             # output format
             if j==0: tmp=''
@@ -466,10 +524,12 @@ class Reaction:
             else: rline+=('{:s}{:5.3E} {:s}'.format(tmp,rts[j],rcn[j]))
 
         if Type == 'simple': return rline
-        elif Type == 'all':
+
+        elif Type in ['all','clean']:
             # add Kinetic rate: as comment and spack form
             rcn=self.rate
             for j in ('%'+rcn.str),rcn.SSH: rline+=('\n'+j)
+            
         else:
             raise NameError('MD: type unknown '+Type)
 
@@ -526,11 +586,13 @@ class Reaction:
             elif line[0] == '%':
                 # kinetic rate in MCM format
                 self.rate.str = line[1:]
-                if 'J' in line: self.rate.Photolysis = True
+                if 'J<' in line: self.rate.Photolysis = True
             # kinetic rate
             elif 'KINETIC' in line:
                 # kinetic rate in SSH format
                 self.rate.SSH = line
+                if 'PHOTOLYSIS' in line: self.rate.Photolysis = True
+
         # check
         for j in self.reactants,self.ratiosRC:
             if j == []:
@@ -548,6 +610,7 @@ class Reaction:
             elif self.rate.str is None:
                 # generate str format from SSH format
                 self.rate.SSHtoStr()
+                
     def isEqual(self,rcn):
         """return if this two reactions are identical"""
         tag = 1
@@ -587,26 +650,52 @@ class Reaction:
         if tag == 0: return False
         else: return True
 
+    def check_conservation(self):
+        # get reactant list
+        rea,rea1 = [],[]
+        for i in self.reactants:
+            if i in NokeepSp:
+                rea.append(i)
+                
+        # check if inorganics are conserved
+        i = 0
+        while i <= (len(self.products) - 1):
+            s = self.products[i]
+            if s in NokeepSp:
+                if s in rea:
+                    self.ratiosPD[i] = 1.0
+                    i += 1
+                    rea1.append(s)
+                else:
+                    print('rcn conservation: del ',self.products[i],' from ',self.toSSH())
+                    del self.products[i]
+                    del self.ratiosPD[i]
+            else: 
+                i += 1
+        if rea != []:
+            for i in rea:
+                if i not in rea1:
+                    self.products.append(i)
+                    self.ratiosPD.append(1.0)
+        
 class Kinetic:
     """store kinetic in MCM string and ssh format"""
 
     def __init__(self,strin=None):
 
-        self.str=strin
-        self.pyformat=None
-        self.Photolysis=False
-        self.SSH=None
+        self.str=strin     # input kinetic as a string
+        self.pyformat=None # in a format can be executed by python
+        self.Photolysis=False # if it is a photolysis reaction
+        self.SSH=None         # in SSH-aerosol format
 
         if strin is not None: self.update()
 
     def update(self,strin=None):
-
+        """Update kineitc"""
         if strin is not None: self.str=strin
-
         self.SSH = MCMtoSSH_kinetic_rate(self.str)
-
-        if self.str[0]=='J': self.Photolysis=True
-        else: self.Photolysis=False
+        #if 'J<' in self.str or 'PHOTOLYSIS' in self.str: self.Photolysis=True
+        #else: self.Photolysis=False
 
         #if self.SSH is None: raise ValueError('Module: kinetic rate for SSH is None, str: '+ self.str)
 

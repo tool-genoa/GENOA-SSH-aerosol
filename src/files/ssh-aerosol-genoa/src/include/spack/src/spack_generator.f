@@ -72,10 +72,10 @@ C------------------------------------------------------------------------
       call get_command_argument(2, filespecies)
       call get_command_argument(3, filemeca)
 
-!genoa      print *, 'Species file: ', filespecies(1:LEN_TRIM(filespecies))
-!genoa      print *, 'Reactions file: ', filemeca(1:LEN_TRIM(filemeca))
-!genoa      print *, 'Configuration file: ',
-!genoa     &                            config_file(1:LEN_TRIM(config_file))
+!zhizhao      print *, 'Species file: ', filespecies(1:LEN_TRIM(filespecies))
+!zhizhao      print *, 'Reactions file: ', filemeca(1:LEN_TRIM(filemeca))
+!zhizhao      print *, 'Configuration file: ',
+!zhizhao     &                            config_file(1:LEN_TRIM(config_file))
 
       ! Parse Config file
       call ssh_read_config_file(config_file)
@@ -145,24 +145,24 @@ C------------------------------------------------------------------------
                 select case (label)
                 case ('mechanism_name')
                    read(buffer, *, iostat=ios) mechanism_name
-!genoa                   print *, '  |-- Read mechanism_name: ',
-!genoa     &                       mechanism_name
+!zhizhao                   print *, '  |-- Read mechanism_name: ',
+!zhizhao     &                       mechanism_name
                 case ('function_suffix')
                    if (LEN_TRIM(buffer).ne.0) then
                        read(buffer, *, iostat=ios) function_suffix
                    endif
-!genoa                   print *, '  |-- Read function_suffix: ',
-!genoa     &                       function_suffix
+!zhizhao                   print *, '  |-- Read function_suffix: ',
+!zhizhao     &                       function_suffix
                    if (LEN_TRIM(function_suffix).ne.0) then
                      function_suffix = "_"//function_suffix
                    end if
                 case ('aerosol_formation')
                    read(buffer, *, iostat=ios) aerosol_formation
-!genoa                   print *, '  |-- Read aerosol_formation: ',
-!genoa     &                       aerosol_formation
+!zhizhao                   print *, '  |-- Read aerosol_formation: ',
+!zhizhao     &                       aerosol_formation
                 case default
-!genoa                   print *, '  |-- /!\ Skipping invalid label at line',
-!genoa     &                       line
+!zhizhao                   print *, '  |-- /!\ Skipping invalid label at line',
+!zhizhao     &                       line
                 end select
              endif
           end do

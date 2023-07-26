@@ -1,12 +1,19 @@
-# -*- coding: utf-8 -*-
-#================================================================================
+# ================================================================================
 #
-#     GENOA v1.0: the GENerator of reduced Organic Aerosol mechanism
+#   GENOA v2.0: the GENerator of reduced Organic Aerosol mechanism
 #
-#     Copyright (C) 2022 CEREA (ENPC) - INERIS.
-#     GENOA is distributed under GPL v3.
+#    Copyright (C) 2023 CEREA (ENPC) - INERIS.
+#    GENOA is distributed under GPL v3.
 #
-#================================================================================
+# ================================================================================
+#
+#  KineticMCMtoSSH.py converts the knietic rate contants from MCM format
+#
+#   to a format can be executed by SSH-aerosol. 
+#
+#  The converted format is used to output SSH-aerosol aerosol species list.
+#
+# ================================================================================
 
 import math
 from numpy import pi
@@ -41,15 +48,29 @@ KMT15 = ['MCM1',8.6E-29, 300, -3.1, 9.0E-12, 300, -0.85, 0.48] # TEMP/k
 CKR_list=['KMT13', 'KFPAN', 'KMT14', 'KBPAN', 'KBPPN', 'KMT15']
 
 manual_lists={
-            '2*(K298CH3O2*8.0E-12)@0.5*RO2':'KINETIC TB RO2 ARR1 3.34664e-12',
-            '2*(K298CH3O2*2.9E-12*EXP(500/TEMP))@0.5*RO2':'KINETIC TB RO2 ARR2 2.01494e-12 -250',
-            '2*(KCH3O2*7.8E-14*EXP(1000/TEMP))@0.5*RO2':'KINETIC TB RO2 ARR2 2.01494e-12 -250',
-            '(KCH3O2*7.8E-14*EXP(1000/TEMP))@0.5' :'KINETIC TB RO2 ARR2 8.963e-14 -682.5',
-            '2*KCH3O2*RO2*7.18*EXP(-885/TEMP)':'KINETIC TB RO2 ARR2 1.4791e-12 520',
+            '2*(K298CH3O2*8.0E-12)@0.5*RO2':'TB RO2 ARR1 3.34664e-12',
+            '2*(K298CH3O2*2.9E-12*EXP(500/TEMP))@0.5*RO2':'TB RO2 ARR2 2.01494e-12 -250',
+            '2*(KCH3O2*7.8E-14*EXP(1000/TEMP))@0.5*RO2':'TB RO2 ARR2 1.7926e-13 -682.5',
+            '(KCH3O2*7.8E-14*EXP(1000/TEMP))@0.5' :'ARR2 8.963e-14 -682.5',
+            '2*KCH3O2*RO2*7.18*EXP(-885/TEMP)':'TB RO2 ARR2 1.4791e-12 520',
+            
+             # TOL MCM
+            '2*(KCH3O2*2.4E-14*EXP(1620/TEMP))@0.5*RO2':'TB RO2 ARR2 9.9438e-14 -992.5',
+                        
             # NC12H26
-            '2*(KCH3O2*6.4E-14)@0.5*RO2':'KINETIC TB RO2 ARR2 1.6238e-13 -182.5', #2*(1.03E-13*6.4E-14*math.exp(365/TEMP))**0.5 => 1.6238e-13 182.5
-            '2*(K298CH3O2*3E-13)@0.5*RO2':'KINETIC TB RO2 ARR1 6.4807e-13',# 2*(3.5E-13*3E-13)**0.5
-            '2*(KCH3O2*1.6E-12*EXP(-2200/TEMP))@0.5*RO2':'KINETIC TB RO2 ARR2 1.6238e-12 917.5', # 2 * (1.03E-13*1.6E-12)**0.5 1.6238e-12 (365-2200)*0.5 = -917.5
+            '2*(KCH3O2*6.4E-14)@0.5*RO2':'TB RO2 ARR2 1.6238e-13 -182.5', #2*(1.03E-13*6.4E-14*math.exp(365/TEMP))**0.5 => 1.6238e-13 182.5
+            '2*(K298CH3O2*3E-13)@0.5*RO2':'TB RO2 ARR1 6.4807e-13',# 2*(3.5E-13*3E-13)**0.5
+            '2*(KCH3O2*1.6E-12*EXP(-2200/TEMP))@0.5*RO2':'TB RO2 ARR2 1.6238e-12 917.5', # 2 * (1.03E-13*1.6E-12)**0.5 1.6238e-12 (365-2200)*0.5 = -917.5
+
+            '3.8E-13*EXP(780/TEMP)*(1-1/(1+498*EXP(-1160/TEMP)))':'SPEC -10', #CH3O2 + HO2 -> CH3OOH
+            '3.8E-13*EXP(780/TEMP)*(1/(1+498*EXP(-1160/TEMP)))': 'SPEC -11', #CH3O2 + HO2 -> HCHO
+            # in case that lump CH3COCH3
+            '8.8E-12*EXP(-1320/TEMP)+1.7E-14*EXP(423/TEMP)':'SPEC -13',
+            # add for LIMONENE species: INDO
+            '1.80E+13*(TEMP/298)@1.7*EXP(-4079/TEMP)':'ARR3 1.119708E+09 1.7 4079.',
+            '1.80E+13*(TEMP/298)@1.7*EXP(-4733/TEMP)':'ARR3 1.119708E+09 1.7 4733.',
+            '2.20E+10*EXP(-8174/TEMP)*EXP(1.00E+8/TEMP@3)':'SPEC -16',
+            '8.14E+9*EXP(-8591/TEMP)*EXP(1.00E+8/TEMP@3)':'SPEC -17',
                 }
 
 # Third party species
@@ -87,54 +108,48 @@ def tryCKR(kin):
     if kin in CKR_list: return eval(kin)
     else: return False
 
+def get_type_rate(kin):
+    """return rate and the common part of SSH rate"""
+    rt = 1.0
+    for i in ['ARR1','ARR2','ARR3','MCM3','TB']:
+        if i in kin:
+            rate = [j for j in kin.split(' ') if j != '']
+            rt = rate[rate.index(i)+1] # after identifer
+            if isfloat(rt): 
+                rate.remove(rt)
+                return rate,float(rt)
+            elif i == 'TB': # last try
+                return kin, 1.0
+            else: raise ValueError(i,kin,rate)
+    for i in ['MCM1','MCM2']:
+        if i in kin:
+            rate = [j for j in kin.split(' ') if j != '']
+            rt = rate[-1]
+            if isfloat(rt): 
+                return rate[:-1],float(rt)
+            else: raise ValueError(i,kin,rate)
+    # SPEC
+    return kin,1.0
+
 def manual(kin):
     """return complete kinetic used in spack"""
-    #The Reactions of RO2 with HO2
-    if kin=='3.8E-13*EXP(780/TEMP)*(1-1/(1+498*EXP(-1160/TEMP)))':
-        #CH3O2 + HO2 -> CH3OOH
-        return 'KINETIC SPEC -10'
-    elif kin=='3.8E-13*EXP(780/TEMP)*(1/(1+498*EXP(-1160/TEMP)))':
-        #CH3O2 + HO2 -> HCHO
-        return 'KINETIC SPEC -11'
-    elif kin=='2*KCH3O2*RO2*(1-7.18*EXP(-885/TEMP))':
+
+    # put the ones can not add lumping ratios here
+    if kin=='2*KCH3O2*RO2*(1-7.18*EXP(-885/TEMP))':
         #CH3O2 + RO2 -> CH3OH + HCHO
         #1.03E-13*math.exp(365/TEMP)*(1-7.18*EXP(-885/TEMP))
-        return 'KINETIC TB RO2 SPEC -12'
+        return 'TB RO2 SPEC -12'
 
     # for seperate
     elif kin=='2*KCH3O2*RO2*0.5*(1-7.18*EXP(-885/TEMP))':
         #CH3O2 + RO2 -> CH3OH + HCHO
         #1.03E-13*math.exp(365/TEMP)*(1-7.18*EXP(-885/TEMP))
-        return 'KINETIC TB RO2 SPEC -15'
+        return 'TB RO2 SPEC -15'
 
-    # in case that lump CH3COCH3
-    #elif kin=='8.8E-12*EXP(-1320/TEMP) + 1.7E-14*EXP(423/TEMP)':
-    elif '8.8E-12*EXP(-1320/TEMP)+1.7E-14*EXP(423/TEMP)' in kin:
-        if kin=='8.8E-12*EXP(-1320/TEMP)+1.7E-14*EXP(423/TEMP)':
-            #CH3COCH3 + OH -> CH3COCH2O2
-            return 'KINETIC SPEC -13'
-        else:
-            print('KtS: add ratio as TB in SSH: ',kin)
-            a = eval(kin.replace('8.8E-12*EXP(-1320/TEMP) + 1.7E-14*EXP(423/TEMP)*',''))
-            a = 'KINETIC TB {:6.3E} SPEC -13'.format(a)
-            print(a)
-            return a
     elif kin=='5.00E-12*O2*3.2*(1-EXP(-550/TEMP))':
         #HCOCO -> 1.0000 CO + 1.0000 OH
         #5.00E-12*O2*3.2*(1-EXP(-550/TEMP))
-        return 'KINETIC TB O2 SPEC -14'
-
-    # add for LIMONENE species: INDO
-    elif kin=='1.80E+13*(TEMP/298)@1.7*EXP(-4079/TEMP)':
-        #return 'KINETIC SPEC -16'
-        return 'KINETIC ARR3 1.119708E+09 1.7 4079.'
-    elif kin=='1.80E+13*(TEMP/298)@1.7*EXP(-4733/TEMP)':
-        #return 'KINETIC SPEC -17'
-        return 'KINETIC ARR3 1.119708E+09 1.7 4733.'
-    elif kin=='2.20E+10*EXP(-8174/TEMP)*EXP(1.00E+8/TEMP@3)':
-        return 'KINETIC SPEC -16'
-    elif kin=='8.14E+9*EXP(-8591/TEMP)*EXP(1.00E+8/TEMP@3)':
-        return 'KINETIC SPEC -17'
+        return 'TB O2 SPEC -14'
 
     else:
         for key,val in manual_lists.items(): # process ratio if exists 
@@ -147,6 +162,9 @@ def manual(kin):
                         if isfloat(tmp):
                             if 'ARR1' in val: return val.replace(val.split(' ')[-1],str(tmp*float(val.split(' ')[-1])))
                             elif 'ARR2' in val: return val.replace(val.split(' ')[-2],str(tmp*float(val.split(' ')[-2])))
+                            elif 'ARR3' in val: return val.replace(val.split(' ')[-3],str(tmp*float(val.split(' ')[-3])))
+                            elif 'TB' in val and isfloat(val.split(' ')[1]): val.replace(val.split(' ')[1],str(tmp*float(val.split(' ')[1])))
+                            elif 'TB' not in val: return 'TB {:6.3E} '.format(tmp) + val
                             else: return 0
                     except:
                         return 0
@@ -229,7 +247,7 @@ def MCMtoSSH_kinetic_rate(kin):
         else:   return MCMtoSSH_photolysis(kin.split('*')[0])
     # manual
     elif manual(kin):
-        return manual(kin)
+        return 'KINETIC ' + manual(kin)
     else:
         # build a df to store info
         df=[['TB','C1','EXP','CKR','unknown'],[[],[],[],[],[]]]

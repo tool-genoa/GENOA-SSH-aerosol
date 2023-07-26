@@ -1,24 +1,32 @@
-# -*- coding: utf-8 -*-
-#================================================================================
+# ================================================================================
 #
-#     GENOA v1.0: the GENerator of reduced Organic Aerosol mechanism
+#   GENOA v2.0: the GENerator of reduced Organic Aerosol mechanism
 #
-#     Copyright (C) 2022 CEREA (ENPC) - INERIS.
-#     GENOA is distributed under GPL v3.
+#    Copyright (C) 2023 CEREA (ENPC) - INERIS.
+#    GENOA is distributed under GPL v3.
 #
-#================================================================================
+# ================================================================================
+#
+#  DataStream.py provides functions to input and output of chemical mechanisms.
+#
+# ================================================================================
 
 import os
+from copy import deepcopy
 
 import Module as md
-from Parameters import SSHSpeciesInit,NokeepSp,cst,AeroDict,prefix
-from Functions import isfloat,compare,isint
+from Parameters import SSHSpeciesInit,NokeepSp, \
+                       AeroDict,prefix, \
+                       species_list_aer_init, primaryVOCs
+from Functions import isfloat,compare,isint, \
+                      get_negative_str, \
+                      convert_number_format_in_string, \
+                      reformat_number_in_string
 from ChemRelation import get_species_from_reactions, generation
 from KineticMCMtoSSH import KineticSSHtoStr, mcm_photolysis
 
 # if add fake species for radicals
-tag_First = False # first time from MCM to SSH, no input SOAPorg file
-tag_letter = False # output viz with letter if possible
+
 tag_seperate = False # seperate reactions
 
 def read_chem_sets(reactionfile,speciesfile,speciesType='MCM',reactionType='MCM'):
@@ -36,17 +44,20 @@ def read_chem_sets(reactionfile,speciesfile,speciesType='MCM',reactionType='MCM'
     # get reaction list
 
     # record species appear in the reaction list
-    sps = []
+    #sps = []
     # store info as md.Reaction() instances 
-    reactions=[]
+    reactions, rcn_ratios, rcn_pds = [], [], []
 
     if reactionType == 'MCM': 
         # process MCM reaction in html format
         with open (reactionfile) as f: fin=f.read().splitlines()
 
+        # test spr
+        spr = '→' # '\xe2\x86\x92' for python2
+
         for info in fin:
 
-            if '\xe2\x86\x92' not in info: continue #'\xe2\x86\x92'
+            if spr not in info: continue
 
             # "Goto MCM\tBCARY + NO3\t\xe2\x86\x92\tNBCO2\t1.90D-11"
             # a_info looks like ['Goto MCM', 'BCARY + NO3', '\xe2\x86\x92', 'NBCO2', '1.90D-11']
@@ -74,7 +85,6 @@ def read_chem_sets(reactionfile,speciesfile,speciesType='MCM',reactionType='MCM'
             # change D notion to E notion
             for i in '-','+':
                 if 'D'+i in raw_rate: raw_rate=raw_rate.replace('D'+i,'E'+i)
-
             # MMM: check if there is a branch ratio in raw rate
             # if not single product in the reaction
             if tag_seperate: nb = 1
@@ -86,31 +96,47 @@ def read_chem_sets(reactionfile,speciesfile,speciesType='MCM',reactionType='MCM'
             if nb==1: # no ratio, only one product
                 ratio=1
                 rate=raw_rate
-            elif nb>2:
-                print(a_rt)
-                raise ValueError('DS: pb1 multiple *0. in rate: '+raw_rate)
             else:
+                if nb > 2: print(a_rt,'DS: pb1 multiple *0. in rate: '+raw_rate)
                 # check the part after *0.
                 # '1D-16*0.35'
-                if isfloat('0.'+a_rt[1]):
-                    ratio='0.'+a_rt[1]
+                if isfloat('0.'+a_rt[-1]):
+                    ratio='0.'+a_rt[-1]
                 # '1D-16*0.35*KDEC'
-                elif isfloat('0.'+a_rt[1].split('*')[0]):
-                    ratio='0.'+a_rt[1].split('*')[0]
+                elif isfloat('0.'+a_rt[-1].split('*')[0]):
+                    ratio='0.'+a_rt[-1].split('*')[0]
                 # other cases
                 else:
                     print(a_rt)
                     raise ValueError('DS: pb2 *0. not for ratio '+raw_rate)
                 # get rate without ratio
-                rate=raw_rate.replace('*'+ratio,'')
-                ratio=float(ratio)
-
+                if '*'+ratio in raw_rate and len(raw_rate.split('*'+ratio)) == 2:
+                    rate=raw_rate.replace('*'+ratio,'')
+                    ratio=float(ratio)
+                else:
+                    raise ValueError('multiple *ratio','*'+ratio,raw_rate)
+                    
             ## record chemical reaction
-            if not tag_seperate and ind == 0 and len(reactions[-1]) > 1 and reactions[-1].rate.str==rate and compare(reactions[-1].reactants,reactants):
-                rcn=reactions[-1] # merge if rate, reactants are same with the previous one 
+            tag = -1
+            if not tag_seperate and reactions != []:# and ratio != 1:
+                for i in range(len(reactions)):
+                    if reactions[i].rate.str==rate and compare(reactions[i].reactants,reactants):
+                        if ratio >= 1:
+                            print('sim rcn has ratio >= 1.',i,ratio,reactants,products,rate)
+                        else:
+                            if sum(rcn_ratios[i]) + ratio > 1:
+                                print('new ratio exceed 1.',i,ratio,sum(rcn_ratios[i])+ratio,reactants,products,rate)
+                                print(rcn_ratios[i],rcn_pds[i])
+                            tag = i
+            if tag != -1:
+                rcn=reactions[tag] # merge if rate, reactants are same with the previous one
+                rcn_ratios[tag].append(ratio)
+                rcn_pds[tag].append(products)
             else:
                 # build new reaction
                 reactions.append(md.Reaction())
+                rcn_ratios.append([ratio])
+                rcn_pds.append([products])
                 rcn=reactions[-1]
                 # add reactants and rate
                 for rc in reactants: rcn.record_reactant(rc,1)
@@ -120,16 +146,50 @@ def read_chem_sets(reactionfile,speciesfile,speciesType='MCM',reactionType='MCM'
             for pd in products: rcn.record_product(pd,ratio)
 
             # add new species in sps
-            for i in reactants,products:
-                for j in i:
-                    if j not in sps: sps.append(j)
+            #for i in reactants,products:
+            #    for j in i:
+            #        if j not in sps: sps.append(j)
 
+        # check ratio to make sure it is 1
+        i = 0
+        for k in range(len(rcn_ratios)):
+            if sum(rcn_ratios[k]) == 1: i+=1
+            else:
         # in case: NBCO2 + HO2 -> NBCOOH KRO2HO2*0.975
-        for i in reactions:
-            if 'HO2' in i.reactants and len(i.products)== 1 and i.ratiosPD[0] != 1.0:
-                i.rate.update(i.rate.str+'*'+str(i.ratiosPD[0]))
-                i.ratiosPD[0] = 1.0
+        #for i in range(len(reactions)):
+                if round(sum(rcn_ratios[k]),4)==1: 
+                    #print('trim ratio before',i,reactions[i].reactants,reactions[i].ratiosPD)
+                    for j in range(len(reactions[i].ratiosPD)):
+                        reactions[i].ratiosPD[j]=round(reactions[i].ratiosPD[j],3)
+                    #print('trim ratio after',reactions[i].ratiosPD)
+                    i+=1
+                elif len(rcn_ratios[k]) == 1:
+               #if 'HO2' in reactions[i].reactants and len(reactions[i].products)== 1 and reactions[i].ratiosPD[0] != 1.0:
+                    reactions[i].rate.update(reactions[i].rate.str+'*'+str(reactions[i].ratiosPD[0]))
+                    reactions[i].ratiosPD[0] = 1.0
+                    i+=1
+                else:
+                    print('---rcn_ratio != 1', sum(rcn_ratios[k]),reactions[i].reactants,reactions[i].rate.str)
+                    print(k,i,rcn_ratios[k],rcn_pds[k])
+                    # need to add reactions
+                    for j in range(len(rcn_ratios[k])):
+                        if j == 0: tmp = deepcopy(reactions[i].rate.str)
+                        else:
+                            reactions.insert(i+j,md.Reaction())
+                            reactions[i+j].reactants=deepcopy(reactions[i].reactants)
+                            reactions[i+j].ratiosRC=deepcopy(reactions[i].ratiosRC)
+                        #print(tmp+'*'+str(rcn_ratios[k][j]))
+                        reactions[i+j].rate.update(tmp+'*'+str(rcn_ratios[k][j]))
+                        reactions[i+j].products = rcn_pds[k][j]
+                        reactions[i+j].ratiosPD = [1.]*len(rcn_pds[k][j])
+                        print('Add new reaction',i,j,reactions[i+j].reactants,reactions[i+j].rate.str,reactions[i+j].products)
+                    i+=len(rcn_ratios[k])
 
+       # sps = get_species_from_reactions(reactions)
+        if len(reactions) < 1:
+            raise ValueError('saperator not found in reaction file. Please check.', spr,reactionfile)
+
+        #sys.exit('here')
     elif reactionType == 'SSH':
         with open (reactionfile) as f: fcn = f.read().splitlines()[2:-1] # remove tabulation lines
 
@@ -195,7 +255,7 @@ def read_chem_sets(reactionfile,speciesfile,speciesType='MCM',reactionType='MCM'
             elif line[0] == '%': #!!! may need other symbol
                 # kinetic rate in MCM format
                 rcn.rate.str = line[1:]
-                if 'J' in line: rcn.rate.Photolysis = True
+                if 'J<' in line: rcn.rate.Photolysis = True
             # kinetic rate
             elif 'KINETIC' in line:
                 # kinetic rate in SSH format
@@ -219,9 +279,9 @@ def read_chem_sets(reactionfile,speciesfile,speciesType='MCM',reactionType='MCM'
                 print(rcn.reactants, rcn.products, rcn.rate.SSH)
                 raise ValueError('DS: rate.str is empty')
             # record species in the sps list
-            for i in rcn.products,rcn.reactants:
-                for j in i:
-                    if j not in sps: sps.append(j)
+            #for i in rcn.reactants,rcn.products:
+            #    for j in i:
+            #        if j not in sps: sps.append(j)
 
     elif reactionType == 'KPP':
         # process MCM reaction/species in KPP format PRAM
@@ -229,8 +289,8 @@ def read_chem_sets(reactionfile,speciesfile,speciesType='MCM',reactionType='MCM'
 
         rates = [] # restore rates
         for info in fin:
-
-            if '{' in info: # find reactions
+            if info[0:2] == '//': continue #find comments
+            elif '{' in info: # find reactions
                 # {74.}     C10H15O2O2 + HO2 = C10H16O4iso1 :             KRO2HO2 ;
                 # reactants
                 reactants, products = [], []
@@ -299,38 +359,40 @@ def read_chem_sets(reactionfile,speciesfile,speciesType='MCM',reactionType='MCM'
                         else: rcn.record_product(pd, ratio/new_ratio)
 
                 # add new species in sps
-                for i in reactants,products:
-                    for j in i:
-                        if j not in sps: sps.append(j)
+                #for i in reactants,products:
+                #    for j in i:
+                #        if j not in sps: sps.append(j)
 
     else:
         raise TypeError('Unknown type in DS:'+reactionType)
 
     # species list
+    sps = get_species_from_reactions(reactions)
     if speciesType == 'MCM': 
-        soapfile = './files/SOAP_'+speciesfile.split('/')[-1]
-        if not os.path.exists(soapfile):
-            print('DS: not find soapfile: ', soapfile)
-            soapfile = './files/SOAP_'+prefix
-        species = sps_to_species(sps,speciesfile,'MCM',soapfile)
-    elif speciesType == 'SSH': species = read_species(sps,speciesfile)
+        species = sps_to_species(sps,speciesfile,'MCM')
+    elif speciesType == 'SSH': 
+        species = read_species(sps,speciesfile)
     elif speciesType == 'KPP':
         # for current scheme
         species0 = sps_to_species(sps,speciesfile,'KPP')
-        sps0 = []
-        for i in species0: sps0.append(i.name)
+        sps0 = [i.name for i in species0]
+
         sps1 = list(set(sps)-set(sps0))
-        species1 = sps_to_species(sps1,'../../PRAM/mcm_monoterpene_mass.txt','MCM')
-
-        for i in species1: sps1.append(i.name)
-        species = species0 + species1
-
+        print('species need to be generated from MCM: ',sps1)
+        if sps1 != []:
+            #for i in ['CARENE']:
+            #    if i in sps1: sps1.remove(i)
+            #species1 = sps_to_species(sps1,'../../PRAM/mcm_monoterpene_mass.txt','MCM')
+            species1 = read_species(sps1,'../toSSH/MPo/MPo.mol')
+            sps1 = sps1 + [i.name for i in species1]
+            species = species0 + species1
+        else: species = species0
     else:
         raise TypeError('DS: speciesType unknown '+speciesType)
 
     return reactions,species
 
-def sps_to_species(sps,speciesfile,Type = 'MCM', soapfile = './files/SOAP_'+prefix):
+def sps_to_species(sps,speciesfile,Type = 'MCM'):
     """
         Objectives:
 
@@ -359,7 +421,7 @@ def sps_to_species(sps,speciesfile,Type = 'MCM', soapfile = './files/SOAP_'+pref
             for j in sls:
                 if j.strip()!='':slist.append(j.strip())
             if len(slist) !=4:
-                print(soapfile)
+                print(speciesfile)
                 raise OSError('DS: not 4 split by \\t: '+i)
             for j in range(4): spLists[j].append(slist[j])
 
@@ -376,16 +438,25 @@ def sps_to_species(sps,speciesfile,Type = 'MCM', soapfile = './files/SOAP_'+pref
                 j.mass=float(spLists[3][k])
                 j.organic=True
                 j.source.append('MCM')
-                j.update_advanced(AeroDict)
+                # commant for generating PRAM species
+                j.update(AeroDict)
+                #j.update_advanced(AeroDict)
 
             else: # record not organic species
                 species.append(md.Species(i))
 
             # read gamma from SSH output file
             #read_properties_SSH(species,'./files/gammainfSSH')
+
         # read SOAP structure
-        if 'CRI' in speciesfile or 'cri' in speciesfile : update_AIOMFACformat(species,'./files/SOAP_CRI')
-        elif not tag_First: update_AIOMFACformat(species, soapfile)
+        inputfile = AeroDict['soapfile']
+        #if 'CRI' in speciesfile or 'cri' in speciesfile : update_AIOMFACformat(species,'./files/SOAP_CRI')
+        #elif not tag_First: update_AIOMFACformat(species, inputfile)
+        if inputfile and os.path.exists(inputfile):
+            # read SOAP output structure
+            #inputfile = './files/SOAP_'+speciesfile.split('/')[-1]
+            print('SOAP output file is used to build aerosol list: ',inputfile)
+            update_AIOMFACformat(species, inputfile,'SOAP')
 
     elif Type == 'KPP':
         with open (speciesfile) as f: fsp=f.read().splitlines()[1:]
@@ -419,7 +490,7 @@ def sps_to_species(sps,speciesfile,Type = 'MCM', soapfile = './files/SOAP_'+pref
                 # init j.RO2,j.condensed,j.Psat_atm,j.Psat_torr
                 if sname[-1] == 'O': j.Radical=True
                 elif sname[-2:] == 'O2':
-                    j.RO2=True
+                    j.RO2=True # only for MCM species ??
                     j.Radical=True
                 else: j.condensed = True
 
@@ -455,11 +526,10 @@ def to_latex_sets(path,chem,reactions,species,soapfile = None):
     os.makedirs(path, exist_ok=True)
 
     # get species list
-    sps = []
-    for i in species: sps.append(i.name)
+    sps=[i.name for i in species]
 
     if soapfile is not None:
-        print('read new properites from soapfile: ',soapfile)
+        print('Update new properites from soapfile: ',soapfile)
         with open (soapfile,'r') as f: info = f.read().splitlines()
         for i in info:
             if 'Ginf' in i: 
@@ -471,7 +541,7 @@ def to_latex_sets(path,chem,reactions,species,soapfile = None):
                     s.henry, s.gamma = float(tmp[-1]), float(tmp[-2])
                 else: print('to_latex_sets: ', tmp[1], 'not found in species list')
     # seperator
-    spr = '\\middlehline\n'
+    spr = '\\hline\n'
 
     with open (path+chem+'.latex','w') as f:
         # reactions
@@ -489,7 +559,7 @@ def to_latex_sets(path,chem,reactions,species,soapfile = None):
                 if rcn.ratiosRC[i] == 1.0: text += tsp
                 else:  text += '{:5.3E} {:s}'.format(rcn.ratiosRC[i],tsp)
                 text += ' + '
-            text = text[0:-3] + ' -> '# add ->
+            text = text[0:-3] + ' $\\rightarrow$ '# add ->
 
             # products
             if rcn.products != []:
@@ -506,80 +576,159 @@ def to_latex_sets(path,chem,reactions,species,soapfile = None):
 
             # rate
             rts = rcn.rate.SSH.split(' ')
+            textrt = ''
 
-            if 'TB' in rts: text += '[{:s}] * '.format(rts[rts.index('TB')+1]) # add TB species
-            if 'ARR1' in rts: text += rts[rts.index('ARR1')+1]
+            if 'TB' in rts: textrt += '[{:s}] * '.format(rts[rts.index('TB')+1]) # add TB species
+            if 'ARR1' in rts: textrt += rts[rts.index('ARR1')+1]
             elif 'ARR2' in rts: 
                 # get the negative value
                 if rts[-1][0] == '-': val = rts[-1][1:]
                 else: val = '-' + rts[-1]
-                text += '{:s} * EXP({:s}/TEMP)'.format(rts[rts.index('ARR2')+1],val.replace('.00',''))
+                textrt += '{:s} * EXP({:s}/T)'.format(rts[rts.index('ARR2')+1],val.replace('.00',''))
             elif 'ARR3' in rts:
                 # get the negative value
                 if rts[-1][0] == '-': val = rts[-1][1:]
                 else: val = '-' + rts[-1]
-                text += '{:s}*TEMP**{:s}*EXP({:s}/TEMP)'.format(rts[rts.index('ARR3')+1],rts[rts.index('ARR3')+2],val.replace('.00',''))
-            elif 'MCM3' in rts: text += 'J({:s}, {:s}, {:s})'.format(rts[-3],rts[-2],rts[-1])#photolysis
-            else: text += '!!!'
+                textrt += '{:s}*T**{:s}*EXP({:s}/T)'.format(rts[rts.index('ARR3')+1],rts[rts.index('ARR3')+2],val.replace('.00',''))
+            elif 'MCM3' in rts: textrt += 'J({:s}, {:s}, {:s})'.format(rts[-3],rts[-2],rts[-1])#photolysis
+            else: 
+                # check specific types
+                if rcn.rate.str in ['KFPAN', 'KBPAN']:
+                    textrt += rcn.rate.str
+                else:
+                    textrt += ('!!!'+rcn.rate.str)
 
-            f.write(text + '\\\\' + spr)
+            # change format
+            textrt = convert_number_format_in_string(textrt)
+            f.write(text + textrt + '\\\\' + spr)
         f.write('\n\n\n')
+        
         # species
-        #titles = 'Surrogate & Type & Molecular formula & MW$^a$ & P$_{sat}^b$ & $\Delta$H$_{vap}^c$ & K$_p^d$ & H$^e$ & $\gamma^f$\\\\ \n'
-        for s in species:
+        #titles = 'Surrogate & Type & Molecular formula & MW$^a$ & P$_{sat}^b$ & $\Delta$H$_{vap}^c$ & K$_p^d$ & H$^e$ & $\gamma^f$ & C* \\\\ \n'
+        if soapfile is not None: f.write('Update from SOAP file: '+soapfile+'\n')
+        
+        # order species for output
+        for i in species:
+            if not i.condensed: i.psat_atm = 0.
+        species1 = sorted(species, key=lambda x: (x.condensed,x.Radical, -x.psat_atm, x.mass, x.name), reverse=False)
+            
+        for s in species1:
             if s.organic:
                 text = ''
-                # name
+                
+                # get name
                 if s.lump == []: name = s.name
                 else: name = 'm' + s.name
-                # formula
+                
+                # get formula
                 formula = ''
                 for i in ['C','H','N','O']: 
-                    if i in s.functionalGroups:  
-                        if round(s.functionalGroups[i],2) == int(s.functionalGroups[i]):
-                            formula+='{:s}$_{{{:.0f}}}$'.format(i, s.functionalGroups[i])
-                        else: formula+='{:s}$_{{{:.2f}}}$'.format(i, s.functionalGroups[i])
+                    if i in s.functionalGroups:
+                        n = int(s.functionalGroups[i])
+                        if n != 0:
+                            formula += i # add atom
+                            if abs(s.functionalGroups[i] - n) <= 0.01:
+                                if n != 1: # add int
+                                    formula+='$_{{{:d}}}$'.format(n)
+                            else: # add float, 2 digit  # remove last zero
+                                formula+='$_{{{:.2f}}}$'.format(s.functionalGroups[i])
+                                
+
+                # get type
                 if s.condensed:
-                    if s.psat_atm <= 1E-13: stype = 'LVOC'
+                    if s.psat_atm < 1E-13: stype = 'ELVOC'
+                    elif s.psat_atm < 1E-9: stype = 'LVOC'
                     else: stype = 'SVOC'
-                    text += '{:s}&{:s}&{:s}&{:6.1f}&{:5.2E}&{:5.2E}&{:5.2E}&{:5.2E}'.format(name,stype,
-                             formula,s.mass,s.psat_atm,s.dHvap_KJ,s.gamma,s.henry)
+                    # compute effec c
+                    # the calculation was performed for a mean molar mass of 200 g/mol for ideal conditions
+                    # C*=1.e6*Mow*gamma*Psat (en torr)/(760*8.202e-5*temperature)
+                    # gamma=1 and MOW=200 g/mol and t = 298k
+                    effc = 1E6 * 200 * s.gamma * s.psat_atm / (8.202e-5 * 298.)
+                    
+                    # aerosol properties
+                    text0 = '{:s}&{:s}&{:s}&{:6.1f}&{:5.2E}&{:5.2E}&{:5.2E}&{:5.2E}&{:5.2E}'.format(name,stype,
+                             formula,s.mass,s.psat_atm,s.dHvap_KJ,s.gamma,s.henry,effc)
+                             
                 else:
                     if s.Radical: stype = 'Radical'
                     else: stype = 'VOC'
-                    text += '{:s}&{:s}&{:s}&{:6.1f}&&&&'.format(name,stype,formula,s.mass) 
+                    
+                    # gas-phase species properties
+                    text0 = '{:s}&{:s}&{:s}&{:6.1f}&&&&'.format(name,stype,formula,s.mass) 
+                    
+                text += reformat_number_in_string(text0).replace('10^{0','10^{').replace('10^{-0','10^{-')
                 f.write(text + '\\\\' + spr)
 
-def to_SSH_sets(path,chem,reactions,species,tag_complete = 1,tag_fake = False):
+def to_SSH_sets(path,chem,reactions,species0,out_mode = '21', tag_conserved = True, tag_fake = False, kept_species = []):
     """return files that need in SSH"""
     """
         Objectives:
 
         Inputs:
+            path: path to save the mechanism
+            chem: saved name
             
+            reactions: input reaction list 
+            species0: input species list
+            
+            tag_Fake: active if generates fack mechansims from the input scheme
+            
+            tag_conserved: 1: mass conserve for mainly inorganic species (NokeepSps)
+            
+            kept_species: a list of species should be kept in the scheme
+                  if not kept, print message & stop generation
+                   
+            out_mode (two digits): output mode for the mechanism
+                first digit:
+                0: only output .reactions & .mol files
+                1: output all essential files for a SSH-aerosol simulation in a folder
+                2: output all files related to the mechanism (viz file, latex file)
+                second digit:
+                
+                second digit
+                0: strict mode - stop if not kept species or !!! found in the list
+                1: non strict mode
+                
         Outputs:
+            output files related to the input mechanism
     """
-    ### files need in SSH
-    # filename.reactions rout
-    # filename.species sps
 
-    # photolysis-filename pys
-    # filename.RO2 RO2
-    # filename.cst
+    # change species list and reaction list
+    sps0 = [i.name for i in species0]
+    sps = get_species_from_reactions(reactions)
+    species, spRO2 = [],[]
 
-    # species-list-gas-filename: from species.spack.dat <- generate by SSH
-    # species-list-aerosol-filename
+    # check sps
+    for i in sps:
+        if i in sps0 and species0[sps0.index(i)].status:
+            species.append(species0[sps0.index(i)])
+        else:
+            if i in sps0:  raise NameError('Datastream species {:s} is inactived in species list.'.format(i),path,chem)
+            else: raise NameError('Datastream species {:s} is not recorded in species list.'.format(i),path,chem)
 
-    # namelist.ssh
-    # input data
-    
-    # if tag_complete: only output essential files for SSH-aerosol
-    # not output files: Parameter.sav, Reduction.sav, ReductionStrategy.sav, BCARYm3.soap, BCARYm3.gen, BCARYm3.mol, BCARYm3.aer
+    # check kept species
+    if kept_species != []:
+        kept_sps = [] # check if kept species is reserved in the scheme
+        for s in kept_species:
+            if s not in sps: kept_sps.append(s)
+        if kept_sps != []: 
+            print('DS to_SSH_sets: !!! kept species not found: ',kept_sps)
+            if out_mode[1] == '0': return len(kept_sps)
+
+    # check rcn conservation: 
+    # e.g., A + OH -> B + OH
+    if tag_conserved:
+        for i in reactions: i.check_conservation()
+        
+    # add back SSHSpeciesInit
+    for i in list(SSHSpeciesInit.keys()):
+        if i not in sps:
+            species.append(md.Species(i))
+            species[-1].mass=SSHSpeciesInit[i]
+            sps.append(i)
 
     # if add fake radicals in reactions
     if tag_fake: # symbol = 'FA'
-        sps=[]
-        for i in species: sps.append(i.name)
         for n in range(len(reactions)):
             i=0
             while i < len(reactions[n].products):
@@ -590,35 +739,50 @@ def to_SSH_sets(path,chem,reactions,species,tag_complete = 1,tag_fake = False):
                         reactions[n].ratiosPD.append(reactions[n].ratiosPD[i])
                 i+=1
 
-    # default files for init aerosol list and species list in SSH
-    species_list_aer_init='./files/species-list-aer-genoa.dat'
-
-    # output
-    path = '{:s}/{:s}/'.format(path,chem)
+    # output folder
+    if out_mode[0] == '0': path = '{:s}/'.format(path)
+    else: path = '{:s}/{:s}/'.format(path,chem)
+    
+    # creat folder if needs
     os.makedirs(path, exist_ok=True)
 
+    ### save properties in .mol file
+    out_species(species,path+chem+'.mol',Type='mol')
+    
+    ### prepare for reaction list: .reactions
     # reactions head lines
     rout=['SET UNIT GAS MOLCM3','SET TABULATION 11 DEGREES 0. 10. 20. 30. 40. 50. 60. 70. 78. 86. 90.']
-
     num=0 # reaction index
 
     for i in range(len(reactions)):
 
         if not reactions[i].status: continue
         rout.append('%========================='+str(num+1)+'============================')
-
         rout.append(reactions[i].toSSH())
+        # check ro2 species
+        if "TB RO2" in rout[-1]:
+            for s in reactions[i].reactants:
+                # find RO2 species with RO2 reactions
+                if s in sps0 and species0[sps0.index(s)].organic and s not in spRO2:
+                    spRO2.append(s)
         num+=1
 
-    # write files
-    # filename.reactions rout
+    # filename.reactions out
     isMark = 0 # check if there is marked reactions (with !!!)
     with open (path+chem+'.reactions','w') as f:
         for i in rout: 
             f.write(i+'\n')
             if '!!!' in i: isMark+=1
         f.write('END\n')
+        
+    if isMark > 0 and out_mode[1] == '0':
+        print('DS to_SSH_sets: !!! in output reaction file: ',path+chem+'.reactions',', total ',isMark,' times!!! check!!!')
+        return isMark
 
+    # return 0 if only out files for GENOA reduction
+    if out_mode[0] == '0': return 0
+    
+    ### prepare to save other files for SSH-aerosol simulations
     # filename.species species
     fsps=[]
     fsps.append('File for '+chem+' (name and molar mass)\n')
@@ -628,7 +792,7 @@ def to_SSH_sets(path,chem,reactions,species,tag_complete = 1,tag_fake = False):
 
     # filename.RO2 RO2
     fRO2=[]
-    fRO2.append('# RO2 species in '+chem+' mechanism\n')
+    fRO2.append('# RO2 species in {:s} mechanism. Find {:d} RO2 species with RO2 reactions.\n'.format(chem,len(spRO2)))
 
     # filename.aer
     faer=[]
@@ -648,26 +812,23 @@ def to_SSH_sets(path,chem,reactions,species,tag_complete = 1,tag_fake = False):
             sname.append(i.name)
             if i.organic: norg += 1
             #if i.organic and not i.Radical: # for extract smiles structure in SOAP
-            if tag_First and i.organic and not i.Radical:
-                faer.append(i.to_species_list_aer(Type = 'smiles', firstRun = True))
-            elif i.condensed:
-                # with/without strucure
-                if i.SMILES=='-':faer.append(i.to_species_list_aer(Type = 'smiles', henry = i.henry))
-                else: faer.append(i.to_species_list_aer(Type = 'smiles'))
-                if i.SOAPStructure==None:faer_vec.append(i.to_species_list_aer(Type = 'vectors', henry = i.henry))
-                else: faer_vec.append(i.to_species_list_aer(Type = 'vectors'))
+            #if tag_First and i.organic and not i.Radical:
+            #    faer.append(i.to_species_list_aer(Type = 'smiles', firstRun = True))
+            #el
+            if i.condensed:
+                faer.append(i.to_species_list_aer(Type = 'smiles'))
+                faer_vec.append(i.to_species_list_aer(Type = 'vectors'))
             if tag_fake and i.Radical: # fake i.RO2 
                 sname.append('FA'+i.name)
                 fsps.append('FA{:s}    {:6.2f}\n'.format(i.name,i.mass))
-            if i.RO2 and i.SMILES != '-' : fRO2.append(i.name+'\n')
-    
-    # check sps if not with fake species
-    if not tag_fake:
-        sps = get_species_from_reactions(reactions)
-        for i in sps:
-            if i not in sname: 
-                raise NameError('Datastream species {:s} is not recorded in species list.'.format(i))
-
+            #if i.RO2 and i.SMILES != '-' : 
+            if i.name in spRO2 and i.SMILES != '-' : # not input PRAM species
+                #fRO2.append('{:s}\t{:d}\n'.format(i.name,i.groupID))
+                fRO2.append('{:s}\n'.format(i.name))
+                #if not i.RO2: print('to_SSH_set: species not RO2 are with RO2-RO2 reactions: ',i.name)
+            #elif i.RO2 and i.SMILES != '-' :
+            #    print('to_SSH_set: RO2 species without RO2 reaction: ',i.name)
+                #species[species.index(i)].RO2 = False
     # add water
     faer.append(faer0[-1])
     faer_vec.append(faer0[-1])
@@ -675,125 +836,47 @@ def to_SSH_sets(path,chem,reactions,species,tag_complete = 1,tag_fake = False):
     # change number of species if need
     fsps[2] = '{:d} 0\n'.format(len(sname))
 
+    ### output files    
     # filename.species species
     with open (path+chem+'.species','w') as f:
         for i in fsps: f.write(i)
-
     # filename.RO2 RO2
     with open (path+chem+'.RO2','w') as f:
         for i in fRO2: f.write(i)
-    if tag_complete == 2: print('SSH output: number of RO2: ', len(fRO2)-1)
 
-    # filename.aer
-    if tag_complete or tag_First:
-        with open (path+chem+'.aer','w') as f:
-            for i in faer: f.write(i)
-
+    # filename.aer.vec aerosol species list with vector
     with open (path+chem+'.aer.vec','w') as f:
         for i in faer_vec: f.write(i)
 
-    if tag_complete:
+    # other files
+    if out_mode[0] == '2':
+
+        # filename.aer
+        with open (path+chem+'.aer','w') as f:
+            for i in faer: f.write(i)
+
         # filename.cst
-        with open (path+chem+'.cst','w') as f:
-            for i in cst: f.write(i+'\n')
+        #with open (path+chem+'.cst','w') as f:
+        #    for i in cst: f.write(i+'\n')
 
-        # get species list
-        sps = []
-        for i in species: sps.append(i.name)
-
-        # MolProperty
-        #out_species(species,path+chem+'.mol',Type='mol')
-
-        # species-list-gas-filename: from species.spack.dat <- generate by SSH
-
+        # filename.viz
         # output flow chart available generated with graphviz in viz-js.com
-        with open (path+chem+'.viz','w') as f:
-            # 3 for [products, branch ratio, reactants]
-            # shape for products color for reactants # colorscheme = set19
-            # colors see: http://www.graphviz.org/doc/info/colors.html
-            rccols = {'O3': 'blue', 'OH': 'red', 'NO3': 'green',
-                      'NO2': 'yellow3', 'NO': 'orange', 'RO2': 'gray65', 'HO2': 'cyan3',
-                      'CO': 'black', 'SO2': 'black', 'H2O': 'orchid3',
-                      'J': 'red4', 'CL': 'black'} # darkolivegreen4 # yellowgreen # deeppink2 # antiquewhite3
-            if tag_letter: rccols_tmp = {}
-            # init
-            snote = []
-            for i in range(len(sps)): snote.append([[],[],[]]) # record links with others
+        viz_from_chem(reactions,species,path+chem+'.viz')
 
-            for rc in reactions:
-                for i in rc.reactants:
-                    s = sps.index(i)
-                    if species[s].organic:
-                        # the other reactants
-                        side = None
-                        for j in rc.reactants:
-                            if j in list(rccols.keys()): side = j
-                        if side == None: # try other possibility
-                            if 'RO2' in rc.rate.str: side = 'RO2'
-                            elif 'H2O' in rc.rate.str: side = 'H2O'
-                            elif 'J<' in rc.rate.str: side = 'J'
-
-                        # products and brt
-                        for j in range(len(rc.products)):
-                            if rc.products[j] not in NokeepSp:
-                                snote[s][0].append(rc.products[j])
-                                snote[s][1].append(rc.ratiosPD[j])
-                                snote[s][2].append(side)
-            # output
-            f.write('digraph G {\n')
-            # write node
-            tmp = [[],[],[],[],[]] # svoc, lvoc, elvoc, voc, radical
-            rcshape=['box','box','diamond','ellipse','plain']
-            msps = []
-
-            for i in range(len(sps)):
-                if species[i].status and species[i].organic:
-                    if species[i].lump != []: msps.append(species[i].name)
-                    if species[i].condensed:
-                        if species[i].psat_atm <= 1E-13: tmp[2].append(sps[i]) #elvoc
-                        elif species[i].psat_atm <= 1E-9: tmp[1].append(sps[i]) #lvoc
-                        else: tmp[0].append(sps[i]) # svoc
-                    elif species[i].Radical: tmp[4].append(sps[i]) # radical
-                    else: tmp[3].append(sps[i]) # voc
-
-            for i in range(len(tmp)):
-                for j in range(len(tmp[i])):
-                    if j == 0: f.write('\tnode [shape={:s}];'.format(rcshape[i]))
-                    if tmp[i][j] in msps: f.write(' "m{:s}";'.format(tmp[i][j]))
-                    else: f.write(' "{:s}";'.format(tmp[i][j]))
-                f.write('\n')
-
-            for i in range(len(sps)):
-                if sps[i] in msps: sp = 'm'+sps[i]
-                else: sp = sps[i]
-                if snote[i][0] != []:
-                    for j in range(len(snote[i][0])):
-
-                        if snote[i][0][j] in msps: tmp = '\t"{:s}"->"m{:s}"[len=1.00'.format(sp,snote[i][0][j])
-                        else: tmp = '\t"{:s}"->"{:s}"[len=1.00'.format(sp,snote[i][0][j])
-
-                        # format
-                        if snote[i][1][j] != 1.0: tmp +=', label = "{:.1f}"'.format(float(snote[i][1][j])*100.)
-                        if snote[i][2][j] is not None: # products
-                            psp = snote[i][2][j]
-                            tmp +=',color = {0:s}, fontcolor = {0:s}'.format(rccols[psp])
-                            # add letter
-                            if tag_letter and snote[i][1][j] == 1.0 and psp not in list(rccols_tmp.keys()): 
-                                tmp += ', label = "{:s}"'.format(psp)
-                                rccols_tmp[psp] = True
-                        f.write(tmp+']\n')
-            f.write('}\n')
-            if tag_letter: print('rccols_tmp',rccols_tmp)
-
-
-
-    # save properties
-    out_species(species,path+chem+'.mol',Type='mol')
-
-    if tag_complete == 2: print('SSH output: directory in ',path)
-
-    # check if there is unfinished reactions
-    if isMark: print('\n!!!! in output reaction file: ',path+chem+'.reactions',', total ',isMark,' times!!! check!!!')
+        # filename.latex
+        # output species and reaction lists as a latex table
+        #to_latex_sets(path,chem,reactions,species,soapfile = None)
+        
+    # printout check if there is unfinished reactions
+    tmp = 0
+    if kept_species != [] and kept_sps != []: 
+        print('DS to_SSH_sets: !!! kept species not found: ',kept_sps)
+        tmp += len(kept_sps)
+    if isMark:
+        print('DS: !!! in output reaction file: ',path+chem+'.reactions',', total ',isMark,' times!!! check!!!')
+        tmp += isMark
+        
+    return tmp
 
 def read_properties_SSH(species,filename):
     """read property information from files"""
@@ -806,9 +889,7 @@ def read_properties_SSH(species,filename):
     """
     with open (filename) as f: info=f.read().splitlines()
     # species name list
-    sps=[]
-    for i in species: sps.append(i.name)
-
+    sps=[i.name for i in species]
     num=0
     for i in info:
         tmp = i.split(' ')
@@ -841,7 +922,8 @@ def read_species(sps,filename):
                 # first index
                 tmp.append(i)
                 # get species name
-                sname = info[i+1].split('\t')[1].replace('"','')
+                sname = info[i+1].split('"')[-2]
+                #sname = info[i+1].split('\t')[1].replace('"','')
             elif len(tmp) == 1 :
                 # read second index
                 tmp.append(i)
@@ -869,7 +951,7 @@ def read_species(sps,filename):
         if i in inds[0]:
             ind = inds[1][inds[0].index(i)]
             species.append(md.Species())
-            species[-1].fromTest(info[ind[0]:ind[1]])
+            species[-1].fromText(info[ind[0]:ind[1]])
             # check status
             if not species[-1].status: 
                 print('DS: read species '+i+' is not activated from '+filename)
@@ -920,10 +1002,13 @@ def out_species(species,filename,Type='mol'):
 
 def update_AIOMFACformat(species,filename, Type = 'SOAP'):
 
-    print('read file in update_AIOMFACformat: ',filename)
+    if filename and os.path.exists(filename): 
+        print('read file in update_AIOMFACformat: ',filename)
+    else:
+        print('generate functional groups using UManSysProp in update_AIOMFACformat.')
+
     # get names
-    sps=[]
-    for i in species: sps.append(i.name)
+    sps=[i.name for i in species]
 
     if Type == 'SOAP':
         with open (filename,'r') as f: info = f.read().splitlines()
@@ -955,8 +1040,12 @@ def update_AIOMFACformat(species,filename, Type = 'SOAP'):
                     newsp[2][-1].append(float(tmp[-3]))#value
 
         # record SOAP structure
+        tag = 0
         for i in range(len(newsp[0])):
+            print('Update species structure from SOAP: ', species[sps.index(newsp[0][i])].name)
             species[sps.index(newsp[0][i])].SOAPStructure=[newsp[1][i],newsp[2][i]]
+            tag += 1
+        print('In total read Structure from SOAP: ', tag, ' species.')
 
     elif Type == 'Table':
         with open (filename,'r') as f: info = f.read().splitlines()[1:]
@@ -976,286 +1065,120 @@ def update_AIOMFACformat(species,filename, Type = 'SOAP'):
                     newsp[0].append(j)
                     newsp[1].append(float(items[j+6]))
             species[sps.index(items[0])].SOAPStructure = newsp
-            species[sps.index(items[0])].dHvap_KJ = dHvap_simpol(newsp)
+            #species[sps.index(items[0])].dHvap_KJ = dHvap_simpol(newsp)
             print(items[0], newsp, species[sps.index(items[0])].dHvap_KJ)
     else: 
         raise TypeError('DS: update_AIOMFACformat not recognize input type '+Type)
 
-def reaction_merge(reactions,species):
- 
-    reas = [[],[],[]] # store reactants, types, index
-    # sort
-    for i in range(len(reactions)):
-        rcn = reactions[i]
-        if not rcn.status: continue
-        tmp = sorted(rcn.reactants)
-        if tmp in reas[0]: # find the same reactants
-            s = reas[0].index(tmp) # get index in reas
-            rate = check_ssh_type(rcn)
-            if rate in reas[1][s]:
-                reas[2][s][reas[1][s].index(rate)].append(i)                
-            else:
-                reas[1][s].append(rate)
-                reas[2][s].append([i])
-        else: # not find, build new
-            reas[0].append(tmp)
-            reas[1].append([check_ssh_type(rcn)])
-            reas[2].append([[i]])
+def viz_from_chem(reactions, species, filename = 'chem.viz'):
 
-    # merge
-    new_rcns = []
-    for s,i in enumerate(reas[2]):
-        #print(s,reas[0][s],reas[1][s],reas[2][s])
-        for p,k in enumerate(i):
-            if len(k) == 1: # one reaction, no merge
-                new_rcns.append(reactions[k[0]])
-            elif len(k) >= 2: # need to merge
-                tmp = [reactions[j] for j in k] # merged reactions
-                new_rcn = merge_reactions(tmp, reas[1][s][p])
-                #print(new_rcn)
-                if new_rcn: new_rcns.append(new_rcn)
-                else:
-                    for j in k: new_rcns.append(reactions[j])
-            else:
-                raise ValueError('len(reas[2][s]) <= 1.',s,reas[0][s],reas[1][s],reas[2][s])      
-    return  new_rcns
+    # 3 for [products, branch ratio, reactants]
+    # shape for products color for reactants # colorscheme = set19
+    # colors see: http://www.graphviz.org/doc/info/colors.html
+    rccols = {'O3': 'blue', 'OH': 'red', 'NO3': 'green',
+              'NO2': 'yellow3', 'NO': 'orange', 'RO2': 'gray65', 'HO2': 'cyan3',
+              'CO': 'black', 'SO2': 'black', 'H2O': 'orchid3',
+              'J': 'red4', 'CL': 'black'} # darkolivegreen4 # yellowgreen # deeppink2 # antiquewhite3
+    rcarrowheads = {'O3': 'vee', 'OH': 'odiamond', 'NO3': 'onormal',
+              'NO2': 'box', 'NO': 'dot', 'RO2': 'diamond', 'HO2': 'odot',
+              'CO': 'normal', 'SO2': 'normal', 'H2O': 'tee',
+              'J': 'obox', 'CL': 'tee'} 
+    tag_letter = False # output viz with letter if possible
     
-def reaction_seperate(reactions,species,Type = 'nokdec'):
-    """rewrite reactions with seperqte products"""
-    new_rcns = []
-    sps = []
-    # get species list
-    for i in species:
-        sps.append(i.name)
-
-    # process reactions
-    for i in reactions:
-        if not i.status: continue
-        sp = [] # store species that need to be seperate
-        for j in i.products:
-            if species[sps.index(j)].organic: #sp.append(j)
-                if j not in NokeepSp: 
-                    sp.append(j)
-        # cases that not seperate
-        if len(sp) <= 1 or 'J<' in i.rate.str: # not change reaction
-            new_rcns.append(i)
-        else:
-            # check mass balance # get ratios
-            rt = []
-            for j in sp:
-                rt.append(i.ratiosPD[i.products.index(j)])
-            tmp = round(sum(rt),3) # check ratio for kinetic rate
-
-            if tmp < 1.0: # add a destruction if sum(rt) < 1.0
-                sp.append('')
-                rt.append(1.0 - sum(rt))
-                sumrt = 1.
-            elif tmp > 1.0:
-                sumrt = tmp #sum(rt)
-                # need to alter branching ratio
-                for j in range(len(rt)):
-                    rt[j] /= sumrt
-                #print(rt,sumrt,sum(rt))
-            else: 
-                sumrt = 1.0
-                #print('1.0: ',rt,sum(rt))
-            
-            for j in range(len(rt)): rt[j] = round(rt[j],3)
-
-            if Type == 'kdec':
-                tag = 0
-                for s in i.products:
-                    if species[sps.index(s)].lump != [] : 
-                        tag = 1
-                        break
-                if tag == 0: 
-                    new_rcns.append(i)
-                    continue
-
-            # build new reactions
-            for j,s in enumerate(sp):
-                if rt[j] <= 0.0: continue # remove species with very small ratio
-                # new reaction for each species
-                new_rcns.append(md.Reaction())
-                rcn = new_rcns[-1]
-                # copy reactants with their ratios
-                rcn.reactants = i.reactants
-                rcn.ratiosRC = i.ratiosRC
-
-                # trim rate
-                rcn.rate.str = i.rate.str+'*{:.3E}'.format(rt[j])# new rate with ratio
-                rcn.rate.update() # update rcn.species/rcn.type
-
-                # add products
-                if s != '':
-                    rcn.products.append(s)
-                    rcn.ratiosPD.append(sumrt)
-                for k in i.products:
-                    if k not in sp: # modify ratio for common species
-                        rcn.products.append(k)
-                        rcn.ratiosPD.append(i.ratiosPD[i.products.index(k)]/sumrt)
-    return  new_rcns
-
-def merge_reactions(rcns, Type):
-    """merge reactions if they have the same reactants"""
-
-    if len(rcns) < 2 or not Type: # check number of input reactions
-        print('merge_reactions input number of reactions is less than 2! or type is not recognized.',len(rcns),Type)
-        return None
-    else: # check rate.SSH
-        isps,irt = rcns[0].reactants, rcns[0].ratiosRC
-        for i in rcns[1:]:
-            if not (set(isps) == set(i.reactants) and set(irt) == set(i.ratiosRC)):
-                print('reactants or ratiosRC not the same.',set(isps),set(i.reactants),set(irt),set(i.ratiosRC))
-                return None
-        if set(Type) & set(['MCM1','MCM2','SPEC']): return None
-    # new reaction for each species
-    new_rcn = md.Reaction()
-    new_rcn.reactants = isps
-    new_rcn.ratiosRC = irt
-    # get lists of rates
-    ilts = []
-    for i in rcns: ilts.append([x for x in i.rate.SSH.split(' ') if x != ''])
-
-    # get / check index
-    inds = []
-    for s in Type: 
-        tmp = [i.index(s) for i in ilts]
-        if len(set(tmp)) == 1: # same index for all reactions
-            inds.append(tmp[0])
-        else:
-            print('index of rate type is not the same.',s,tmp,ilts)
-            return None
-
-    # new rate
-    tps = ['ARR1','ARR2','ARR3','MCM3']
-    lens = {'ARR1':1,'ARR2':2,'ARR3':3,'MCM3':3}
-    ns = 0 # merge time
-    for s in Type:
-        if s in tps:
-            if ns == 0: ns += 1
-            else: raise ValueError('Find multiple ssh types.',ns,Type,tps)
-            ind = inds[Type.index(s)] + 1 # get R1: the constant
-            l = lens[s]
-            for i in ilts: # check length
-                if len(i[ind:]) != l:
-                    raise ValueError('len of ssh type does not fit.',s,len(i[ind:]),ilts)
-            rts = [float(i[ind]) for i in ilts]
-            if s == 'ARR1':
-                new_rcn.rate.str = '{:5.2E}'.format(sum(rts))
-            elif s == 'ARR2':
-                iexp = [x[ind+1] for x in ilts]
-                if len(set(iexp)) != 1:
-                    print('ARR2 exp value not the same',iexp,ilts)
-                    return None
-                else: # get negative value
-                    new_rcn.rate.str = '{:5.2E}*EXP({:s}/TEMP)'.format(sum(rts),get_negative_str(iexp[0]))
-            elif s == 'ARR3':
-                itemp = [x[ind+1] for x in ilts]# T**a
-                iexp = [x[ind+2] for x in ilts]# exp(b)    
-                if len(set(itemp)) == 1 and len(set(iexp)) == 1:
-                    new_rcn.rate.str = '{:5.2E}*TEMP**{:s}*EXP({:s}/TEMP)'.format(sum(rts),itemp[0],get_negative_str(iexp[0]))
-                else:
-                    print('ARR3 c2 and/or c3 value not the same',itemp,iexp,ilts)
-                    return None
-            elif s == 'MCM3':
-                # check photolysis type
-                num = [i.rate.str.split('J<')[1].split('>')[0] for i in rcns]
-                if len(set(num)) == 1 and isint(num[0]):
-                    num = int(num[0])
-                    tmp = mcm_photolysis(num)
-                    if len(tmp) == 3:
-                        if tmp[1] != []: 
-                            new_rcn.rate.str = 'J<{:d}>*{:5.2E}'.format(num,sum(rts))
-                    else: return None
-                return None
-
-    if 'TB' in Type: # treat TB at the end
-        ind = inds[Type.index('TB')] + 1
-        tmp = [x[ind] for x in ilts]
-        if len(set(tmp)) == 1: # one TB value
-            new_rcn.rate.str += '*'+tmp[0] # add TB
-        else:
-            print('multiple TB.',tmp,ilts)
-            return None
-    # update
-    new_rcn.rate.update()
-
-    # get new branching ratios
-    for j in range(len(rcns)):
-        for i,s in enumerate(rcns[j].products):
-            if s == '': continue # no product
-            k = rcns[j].ratiosPD[i]*rts[j]/sum(rts) # ratio
-            if s not in new_rcn.products:
-                new_rcn.products.append(s)
-                new_rcn.ratiosPD.append(k)
-            else:
-                ind = new_rcn.products.index(s)
-                new_rcn.ratiosPD[ind] += k
-
-    new_rcn.products = [i for _,i in sorted(zip(new_rcn.ratiosPD, new_rcn.products),reverse=True)]
-    new_rcn.ratiosPD = list(sorted(new_rcn.ratiosPD,reverse=True))
+    sps = [s.name for s in species]
     
-    return new_rcn
+    with open (filename,'w') as f:
 
-def check_ssh_type(rcn):
-    """read the input reaction and return the type in SSH"""
-    if '!!!' in rcn.rate.SSH: 
-        print('find !!! in rcn.rate.SSH.')
-        return None
-    else:
-        itype = [i for i in rcn.rate.SSH.split(' ') if (not isfloat(i) and  i not in ['KINETIC','']) ]
-        if itype == []: raise NameError('No keywords (e.g. SPEC, ARR1, ARR2, ARR3, MCM, TB) is found.',rcn.rate.SSH)
-        return itype
+        if tag_letter: rccols_tmp = {}
+        # init
+        snote = []
+        for i in range(len(sps)): snote.append([[],[],[]]) # record links with others
 
-def get_negative_str(val):
-    if val[0] == '-': return val[1:]
-    else: return '-' + val
+        for rc in reactions:
+            if not rc.status: continue
+            for i in rc.reactants:
+                s = sps.index(i)
+                if species[s].organic:
+                    # the other reactants
+                    side = None
+                    for j in rc.reactants:
+                        if j in list(rccols.keys()): side = j
+                    if side == None: # try other possibility
+                        if 'RO2' in rc.rate.str: side = 'RO2'
+                        elif 'H2O' in rc.rate.str: side = 'H2O'
+                        elif 'J<' in rc.rate.str: side = 'J'
 
-def dHvap_simpol(SOAPStructure):
-    simpol1 = {
-                'bo':-9.0677E+02,
-                'C':	-2.3229E+02,
-                'C=C':	5.9336E+01,
-                'OH':	-8.7901E+02,
-                'aldehyde':	-5.2267E+02,
-                'ketone':	1.9917E+01,
-                'COOH':	-1.1963E+03,
-                'nitrate':	-7.8253E+02,
-                'peroxide':	4.4567E+02,
-                'hydroperoxide':	-7.9762E+02,
-                'aromatic ring':	-1.3635E+02,
-                'ether':	-2.2814E+02,
-                'phenol':	-4.2981E+02,
-                'nitrophenol':	2.8685E+02
-             }
-    simpol0 = {
-                'C':[0,1,2,3],
-                'C=C':[16,17,18,19,20],
-                'OH':[26],
-                'aldehyde':	[31],
-                'ketone':[29,30],
-                'COOH':	[37],
-                'nitrate':	[39,40,41],
-                'peroxide':	[45,46,47,48,49,50,51,52,53],
-                'hydroperoxide':[42,43,44],
-                'aromatic ring':[21,22],
-                'ether':[34,35,36],
-                'phenol':[28],
-                'nitrophenol':[38]
-             }
-    ksim = list(simpol0.keys())
-    dH = 0.0
-    for i,j in enumerate(SOAPStructure[0]):
-        tag = 0
-        for k in ksim:
-            if j in simpol0[k]:
-                dH +=  SOAPStructure[1][i] * simpol1[k]
-                tag = 1
-                break
-        if tag == 0: print('!!!!not find strucutre: ', j)
-    if dH != 0.0: return -1 * (dH + simpol1['bo']) * (2.303*8.314)/1000
-    else: return 0.0
+                    # products and brt
+                    for j in range(len(rc.products)):
+                        if rc.products[j] not in NokeepSp:
+                            snote[s][0].append(rc.products[j])
+                            snote[s][1].append(rc.ratiosPD[j])
+                            snote[s][2].append(side)
+        # output
+        f.write('digraph G {\n')
+        # layout
+        f.write('    layout=dot; graph [ranksep=0.8];\n')
+        if 'APINENE' in primaryVOCs:
+            f.write('APINENE [fontsize="50",style="filled",penwidth=0,shape="ellipse",fillcolor="#ff880022"]\n')
+        if 'BPINENE' in primaryVOCs:
+            f.write('BPINENE [fontsize="50",style="filled",penwidth=0,shape="ellipse",fillcolor="#0044ff22"]\n')
+        if 'LIMONENE' in primaryVOCs:
+            f.write('LIMONENE [fontsize="50",style="filled",penwidth=0,shape="ellipse",fillcolor="#00ff0022"]\n')
+        f.write('\n')
+
+        iline_layout = 'penwidth=3,len=1,arrowsize=3'
+        isps_layout = 'fontsize="50"'
+        
+        # write node
+        tmp = [[],[],[],[],[]] # svoc, lvoc, elvoc, voc, radical
+        rcshape=['box','hexagon','octagon','ellipse','plain']
+        msps = []
+
+        for i in range(len(sps)):
+            if species[i].status and species[i].organic:
+                if species[i].name in ['APINENE','BPINENE','LIMONENE']: continue
+                if species[i].lump != []: msps.append(species[i].name)
+                if species[i].condensed:
+                    if species[i].psat_atm <= 1E-13: tmp[2].append(sps[i]) #elvoc
+                    elif species[i].psat_atm <= 1E-9: tmp[1].append(sps[i]) #lvoc
+                    else: tmp[0].append(sps[i]) # svoc
+                elif species[i].Radical: tmp[4].append(sps[i]) # radical
+                else: tmp[3].append(sps[i]) # voc
+
+        for i in range(len(tmp)):
+            for j in range(len(tmp[i])):
+                if j == 0: f.write('\tnode [{:s},shape={:s}];'.format(isps_layout,rcshape[i]))
+                if tmp[i][j] in msps: f.write(' "m{:s}";'.format(tmp[i][j]))
+                else: f.write(' "{:s}";'.format(tmp[i][j]))
+            f.write('\n')
+
+        for i in range(len(sps)):
+            if sps[i] in msps: sp = 'm'+sps[i]
+            else: sp = sps[i]
+            if snote[i][0] != []:
+                for j in range(len(snote[i][0])):
+
+                    if snote[i][0][j] in msps: tmp = '\t"{:s}"->"m{:s}"[{:s}'.format(sp,snote[i][0][j],iline_layout)
+                    else: tmp = '\t"{:s}"->"{:s}"[{:s}'.format(sp,snote[i][0][j],iline_layout)
+
+                    # format
+                    #if snote[i][1][j] != 1.0: tmp +=', label = "{:.1f}"'.format(float(snote[i][1][j])*100.)
+                    if snote[i][2][j] is not None: # products
+                        psp = snote[i][2][j]
+                        tmp +=',color ={0:s},fontcolor={0:s},arrowhead={1:s}'.format(rccols[psp],rcarrowheads[psp])
+                        # add letter
+                        if tag_letter and snote[i][1][j] == 1.0 and psp not in list(rccols_tmp.keys()): 
+                            tmp += ', label = "{:s}"'.format(psp)
+                            rccols_tmp[psp] = True
+                    f.write(tmp+']\n')
+        # add rank
+        tmp = '{rank = min'
+        for j in primaryVOCs: tmp+=(';'+j)
+        f.write(tmp+'}\n') 
+          
+        # end
+        f.write('}\n')
+        if tag_letter: print('rccols_tmp',rccols_tmp)
 
 if __name__ == '__main__':
     rc,sp=read_chem_sets('../fromMCM/BCARY/reaction.txt','../fromMCM/BCARY/mcm_subset_mass.txt')

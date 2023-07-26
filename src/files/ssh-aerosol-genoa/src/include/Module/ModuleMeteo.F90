@@ -28,7 +28,6 @@ contains
     
     ! Read meteo data
     if (imeteo) then
-       !print*, 'read meteo data from', meteo_file !genoa add to chekc
        open(unit = 10, file = meteo_file, status = "old")
 
        count = 0

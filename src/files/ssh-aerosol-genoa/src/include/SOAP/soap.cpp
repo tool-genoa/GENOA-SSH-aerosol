@@ -13,7 +13,7 @@
 #include <blitz/array.h>
 #include "omp.h"
 #include <cstring>
-#include <cstdlib> //genoa
+
 using namespace blitz;
 
 // INCLUDES //
@@ -29,12 +29,12 @@ extern "C" void soap_main_ssh_(double* LWC, double* RH, double* Temperature,
 			       int* imethod, int* soap_inorg,
 			       char* species_name, int* name_len, double* molecular_weight_aer,
 			       double* accomodation_coefficient, int* aerosol_type, 
-			       char* smiles, double* saturation_vapor_pressure, double* henryslaw,
+			       char* partitioning, char* smiles, double* saturation_vapor_pressure,
 			       double* enthalpy_vaporization, double *diffusion_coef, int* nlayer,
 			       int* with_kelvin_effect, double* tequilibrium,
 			       double* dtaeromin, double* dorg, int* coupled_phases,
 			       int* activity_model, double* epser_soap, int* i_hydrophilic,
-			       int* N_inert, int* N_inorganic){
+			       int* N_inert, int* N_inorganic, int* with_oligomerization){
 
   return soap_main_ssh(*LWC, *RH, *Temperature, 
 		       *ionic, *chp, LWCorg, 
@@ -45,12 +45,12 @@ extern "C" void soap_main_ssh_(double* LWC, double* RH, double* Temperature,
 		       *imethod, *soap_inorg,
 		       species_name, *name_len, molecular_weight_aer,
 		       accomodation_coefficient, aerosol_type,
-		       smiles, saturation_vapor_pressure, henryslaw,
+		       partitioning, smiles, saturation_vapor_pressure,
 		       enthalpy_vaporization, diffusion_coef, *nlayer,
 		       *with_kelvin_effect, *tequilibrium,
 		       *dtaeromin, *dorg, *coupled_phases,
 		       *activity_model, *epser_soap, *i_hydrophilic,
-		       *N_inert, *N_inorganic);
+		       *N_inert, *N_inorganic, *with_oligomerization);
 }
 
 /*! \brief Main function of SOAP
@@ -72,12 +72,12 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
 		   int imethod, int soap_inorg,
 		   char species_name[], int name_len, double molecular_weight_aer[],
 		   double accomodation_coefficient[], int aerosol_type[], 
-		   char smiles[], double saturation_vapor_pressure[], double henryslaw[],
+		   char partitioning[], char smiles[], double saturation_vapor_pressure[],
 		   double enthalpy_vaporization[], double diffusion_coef[], int nlayer,
 		   int with_kelvin_effect, double tequilibrium, double dtaeromin,
 		   double dorg, int coupled_phases,
 		   int activity_model, double epser_soap, int i_hydrophilic,
-		   int N_inert, int N_inorganic)
+		   int N_inert, int N_inorganic, int with_oligomerization)
 {
 
   /*** General parameters and options ***/
@@ -96,8 +96,28 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
   // The order of species should not be changed (YK).
   vector<string> species_list_aer;
   vector<string> species_smiles;
+  vector<string> species_part;
   // Get aerosol species names.
   // conversion char to string
+  
+  string tmp2a;
+	  
+  for (i = 0; i < ns_aer * 4; i++)
+    {
+      tmp2a.push_back(partitioning[i]);
+    }
+
+  for (i = 0; i < ns_aer; i++)
+    {
+      string tmp3(tmp2a.substr(i * 4, 4));
+      for (int j = 4 - 1; j >= 0; --j)
+        {
+          if(tmp3[j] == ' ')
+            tmp3.erase(j, 1);
+        }
+      species_part.push_back(tmp3);
+    }
+  
   string tmp2;
 	  
   for (i = 0; i < ns_aer * name_len; i++)
@@ -116,7 +136,7 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
       species_list_aer.push_back(tmp3);
     }
 
-  int smile_len=800; //genoa
+  int smile_len=800;
   string tmp2b;
   for (i = 0; i < ns_aer * smile_len; i++)
     tmp2b.push_back(smiles[i]);
@@ -183,9 +203,9 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
   if (surrogate.size()==0)
     {
       parameters_ssh(config, surrogate, species_list_aer, molecular_weight_aer,
-                     accomodation_coefficient, aerosol_type, species_smiles,
-		     saturation_vapor_pressure, henryslaw, enthalpy_vaporization,
-		     diffusion_coef, i_hydrophilic,N_inert,N_inorganic);
+                     accomodation_coefficient, aerosol_type, species_part, species_smiles,
+		     saturation_vapor_pressure, enthalpy_vaporization,
+		     diffusion_coef, i_hydrophilic,N_inert,N_inorganic,with_oligomerization);
       
       // Compute the activity coefficients at infinite dilution 
       // and the Henry's law constant 
@@ -263,18 +283,17 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
 		    {
 		      if(i_hydrophilic == 0)
 			surrogate[i].Aaq = qaero[iq];
-		      else
-			surrogate[i].Aaq = qaq[iq];
-		    }
+		    } // else
+	             //surrogate[i].Aaq = qaq[iq];
+		  else
 		  // Organic aersol is hydrophobic or LWC is equal or less than LWClimit
-		  else //if(surrogate[i].hydrophobic) //genoa
+		  //if(surrogate[i].hydrophobic) 
 		    surrogate[i].Ap = qaero[iq];
                 }
 
 	      // Inorganic gas concentrations
 	      if (surrogate[i].is_inorganic_precursor)
 		{
-		  //cout << surrogate[i].name << " la " << qgas[iq] << " " << qaero[iq] << " " << i << " " << config.iHNO3 << endl;
 		  surrogate[i].Ag = qgas[iq];
 		  surrogate[i].Ap = 0.0;
 		  surrogate[i].Aaq = 0.0;
@@ -416,7 +435,6 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
 			qaero[iq]=surrogate[config.iNH4p].Aaq*surrogate[config.iNH3].MM/surrogate[config.iNH4p].MM;
 		      if (i==config.iHCl)
 			qaero[iq]=surrogate[config.iClm].Aaq*surrogate[config.iHCl].MM/surrogate[config.iClm].MM;
-		      //cout << "out: " << surrogate[i].name << " " << qgas[iq] << endl;
 		    }
 		  /*
 		    else if (surrogate[i].is_organic==false and i!=config.iH2O and i!=config.iHSO4m)
@@ -517,7 +535,7 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
           if (iq != -1)
             {
               if (surrogate[i].is_organic)
-                {             
+                {
 		  surrogate[i].Ag = qgas[iq];
 		  int iq_aero = (surrogate[i].soap_ind_aero + 1) * config.nbins; 
                   if (surrogate[i].hydrophilic)
@@ -525,7 +543,7 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
 		      if(i_hydrophilic == 1)
 			{
 			  for (b = 0; b < config.nbins; ++b)
-			    {     
+			    {
 			      surrogate[i].Aaq_bins_init(b) += q[iq_aero + config.nlayer*config.nbins+ b ];
 			      surrogate[i].Aaq+=q[iq_aero + config.nlayer*config.nbins + b ];
 			    }
@@ -557,19 +575,47 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
                           }
 		      }
                 }
-              else if (NaCl and (surrogate[i].name == "Na" or surrogate[i].name == "Cl"))
+              else // inorganics
                 {
-                  int iq_aero = (surrogate[i].soap_ind_aero + 1) * config.nbins; 
+                  int ind = surrogate[i].soap_ind_aero;
+                  int iq_aero = (ind + 1) * config.nbins;                                   
                   for (b = 0; b < config.nbins; ++b)
-		    surrogate[i].Aaq_bins_init(b) = q[iq_aero + b];
-
+                    {
+                      if (surrogate[i].name == "SO4")
+                        {
+                          surrogate[i].Aaq_bins_init(b) = frac_SO4mm_bins(b) *
+                            q[iq_aero + b]*surrogate[config.iSO4mm].MM/surrogate[config.iH2SO4].MM;
+                        }
+                      else if (surrogate[i].name == "HSO4")
+                        {
+                          surrogate[i].Aaq_bins_init(b) = frac_HSO4m_bins(b) *
+                            q[iq_aero + b]*surrogate[config.iHSO4m].MM/surrogate[config.iH2SO4].MM;        
+                        }
+                      else if (surrogate[i].name == "NO3")
+                        {
+                          surrogate[i].Aaq_bins_init(b) = q[iq_aero + b] *
+                            surrogate[config.iNO3m].MM/surrogate[config.iHNO3].MM;
+                        }
+                      else if (surrogate[i].name == "NH4")
+                        {
+                          surrogate[i].Aaq_bins_init(b) = q[iq_aero + b] *
+                            surrogate[config.iNH4p].MM/surrogate[config.iNH3].MM;			
+                        }
+                      else if (surrogate[i].name == "Cl" and NaCl)
+                        {
+                          surrogate[i].Aaq_bins_init(b) = q[iq_aero + b] *
+                            surrogate[config.iClm].MM/surrogate[config.iHCl].MM;			
+                        }
+                      else if (surrogate[i].name == "Na" and NaCl)
+                        {
+                          surrogate[i].Aaq_bins_init(b) = q[iq_aero + b];			
+                        }
+                      else
+                        surrogate[i].Aaq_bins_init = 0.0;
+                    }
+                  surrogate[i].Ap_layer_init = 0.0;		
                 }
-              else
-                {
-                  surrogate[i].Aaq_bins_init = 0.0;
-                  surrogate[i].Ap_layer_init = 0.0;
-                }
-             
+              
 	      // Inorganic gas concentrations
               if (surrogate[i].is_inorganic_precursor)
 		{
@@ -579,48 +625,10 @@ void soap_main_ssh(double LWC, double RH, double Temperature,
 		}
 
             }
-          else // liquid ions
+          else // iq is -1, soap_ind is not found for the SOAP species.
             {	      
-	      for (b = 0; b < config.nbins; ++b)
-		{
-		  int ind=surrogate[i].soap_ind;
-		  // PMD    PBC     PNA    PSO4    PNH4    PNO3
-		  // PHCL   PBiA2D  PBiA1D PBiA0D  PAGLY   PAMGLY ...
-		  if (surrogate[i].name == "SO4")
-		    {
-		      int iq_aero = (ind + 1) * config.nbins;                                   
-		      surrogate[i].Aaq_bins_init(b) = frac_HSO4m_bins(b) * q[iq_aero + b]*surrogate[config.iSO4mm].MM/surrogate[config.iH2SO4].MM;
-		      //cout << "in: " << surrogate[i].name << " " << surrogate[i].Aaq_bins_init(b) << " " << surrogate[config.iHSO4m].Aaq_bins_init(b) << ' ' << endl;
-		    }
-		  else if (surrogate[i].name == "HSO4")
-		    {
-		      int iq_aero = (ind + 1) * config.nbins;                                   
-		      surrogate[i].Aaq_bins_init(b) = frac_SO4mm_bins(b) * q[iq_aero + b]*surrogate[config.iHSO4m].MM/surrogate[config.iH2SO4].MM;        
-		    }
-		  else if (surrogate[i].name == "NO3")
-		    {
-		      int iq_aero = (ind + 1) * config.nbins; 
-		      surrogate[i].Aaq_bins_init(b) = q[iq_aero + b]*surrogate[config.iNO3m].MM/surrogate[config.iHNO3].MM;
-		    }
-		  else if (surrogate[i].name == "NH4")
-		    {
-		      int iq_aero = (ind + 1) * config.nbins; 
-		      surrogate[i].Aaq_bins_init(b) = q[iq_aero + b]*surrogate[config.iNH4p].MM/surrogate[config.iNH3].MM;			
-		    }
-		  else if (surrogate[i].name == "Cl")
-		    {
-		      int iq_aero = (ind + 1) * config.nbins; 
-		      surrogate[i].Aaq_bins_init(b) = q[iq_aero + b]*surrogate[config.iClm].MM/surrogate[config.iHCl].MM;			
-		    }
-		  else if (surrogate[i].name=="Na")
-		    {
-		      int iq_aero = (ind + 1) * config.nbins; 
-		      surrogate[i].Aaq_bins_init(b) = q[iq_aero + b];			
-		    }
-		  else
-		    surrogate[i].Aaq_bins_init = 0.0;
-		}
-	      surrogate[i].Ap_layer_init = 0.0;		
+              surrogate[i].Aaq_bins_init = 0.0;
+              surrogate[i].Ap_layer_init = 0.0;
             }
 	  surrogate[i].Atot = surrogate[i].Ap + surrogate[i].Ag + surrogate[i].Aaq;
 

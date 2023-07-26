@@ -1,19 +1,13 @@
 &setup_meteo
 latitude = 48.85,
-longitude = 2.5,               
-Temperature = 298,
-Pressure = 101732.72,   
-Humidity = 0.00448114285246,
-Relative_Humidity = 0.5,	!0.96475079525422891 
+longitude = 2.5,
 meteo_file = "",
 /
-
 
 &setup_time
 initial_time = 0.0, 	!5a.m.
 final_time =600,	!5a.m.-8a.m. total 3h, 10800s           
 delta_t =60,           !simulated every 10 min    
-time_emis = 0,       !emission for 40 min
 /
 
 &initial_condition
@@ -22,12 +16,11 @@ tag_init = 0,
 wet_diam_estimation = 1       	  ! 0 = isorropia
 tag_dbd = 1,	                  
 N_sizebin = 1,                    
-init_gas_conc_file = "./MCM_input/init_gas_y67x48_0h.dat",
-init_aero_conc_mass_file = "./MCM_input/init_aer_soap.dat",
-init_aero_conc_num_file = "./Paris/init_num_9915s.dat",
-cstindex_file = "./src/include/CHEMISTRY/BCARY/BCARY.cst",
-aero_cst_file = "---",
-ro2_conc_file = "---",
+init_gas_conc_file = "---",
+init_aero_conc_mass_file = "---",
+init_aero_conc_num_file = "---",
+cst_gas_file = "./src/include/CHEMISTRY/BCARY/BCARY.cst",
+cst_aero_file = "---",
 ref_soa_conc_file = "---",
 pre_soa_conc_file = "---",
 /
@@ -37,11 +30,7 @@ diam_input = 0.01 10.0
 /
 
 &emissions
-tag_emis = 0,
-with_emis_num = 0,
-emis_gas_file = "../Initial/Paris/init_gas_em_5h.dat",
-emis_aero_mass_file = "../Initial/Paris/init_aero_em_5h.dat", 
-emis_aero_num_file = "../Initial/Paris/emis_aero_num.dat" 
+tag_emis = 0,                ! 0 Without emissions, 1 with internally-mixed emissions, 2 with externally-mixed emissions  !!KS Check when reading the mixing state that if tag_emis = 2 then tag_external = 1. The program needs to stop if tag_emis=2 and tag_external = 0  !!option 2 not yet available 
 /
 
 &mixing_state
@@ -56,7 +45,7 @@ frac_input= 0.0 1.0,          !Manual discretization, set fraction bounds manull
 /
 
 &gas_phase_species
-species_list_file = "./src/include/CHEMISTRY/BCARY/species.spack.dat",                    !Species list for CB05 
+species_list_file = "./src/include/CHEMISTRY/BCARY/species-list.dat",                    !Species list for CB05 
 /
 
 &aerosol_species
@@ -70,9 +59,8 @@ option_photolysis = 1,			!1 if photolysis rates are estimated in the program, 2 
 time_update_photolysis = 100000.        ! if photolysis are read, time in seconds between two reads
 with_heterogeneous = 0,                 !Tag of heterogeneous reaction 
 with_adaptive = 1,                      !Tag of adaptive time step for chemistry 1 if adaptive time step.
-adaptive_time_step_tolerance = 1d-2,    !Relative tolerance for deciding if the time step is kept
-min_adaptive_time_step = 0.001,         !Minimum time step
-RO2index_file = "./src/include/CHEMISTRY/BCARY/BCARY.RO2",
+adaptive_time_step_tolerance = 1E-3,    !Relative tolerance for deciding if the time step is kept
+min_adaptive_time_step = 1E-3,         !Minimum time step
 n_time_angle = 9,
 time_angle_min = 0.d0,
 delta_time_angle = 1.d0,
@@ -81,6 +69,8 @@ latitude_min = 0.d0,
 delta_latitude = 10.d0,
 n_altitude = 9,
 altitude_photolysis_input = 0.0, 1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 10000.0, 15000.0, 20000.0, 
+tag_twostep = 1,
+RO2_list_file = "./src/include/CHEMISTRY/BCARY/BCARY.RO2",
 tag_RO2 = 3, ! 0 no RO2 reaction, 1 only generated RO2, 2 only background RO2, 3 background + generated RO2
 /
 
@@ -118,7 +108,6 @@ epser_soap = 0.01,                 ! relative difference of ros2 in SOAP
 
 &physic_nucleation
 with_nucl = 0,                !Tag of nucleation - Need to have lower diameter about 1nm.
-nucl_model = 0,               !Tag of type of nucleation model ( 1= Ternary, 0= binary) 
 /
 
 
@@ -127,7 +116,7 @@ with_oligomerization = 0
 /
 
 &output
-output_directory = "resultsam", ! modify result saving paths : basic/ cond/ coag/ icut0/ ISOAPDYN/
+output_directory = "results", ! modify result saving paths : basic/ cond/ coag/ icut0/ ISOAPDYN/
 output_type = 1               ! 1: text, 2: binary
 particles_composition_file = "INIT/fractions.txt"
 /

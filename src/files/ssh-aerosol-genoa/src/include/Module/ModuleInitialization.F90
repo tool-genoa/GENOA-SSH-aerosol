@@ -77,7 +77,11 @@ module aInitialization
   integer, save :: i_write_repart ! 1 if repartition coeff are written, 0 otherwise
   integer, save :: with_cond   !Tag fCondensation
   integer, save :: with_nucl   !Tag nucleation
-  Integer, save :: nucl_model  !ITERN !1= Ternary, 0= binary
+  integer, save :: nucl_model_binary, nucl_model_ternary, nucl_model_hetero
+  double precision, save :: scal_ternary, scal_hetero
+  integer, save :: nesp_org_h2so4_nucl
+  integer, dimension(2), save :: org_h2so4_nucl_species
+  character (len=40), dimension(2) :: name_org_h2so4_nucl_species
   integer, save :: ISOAPDYN    ! organic equilibrium  = 0 or dynamic = 1
   integer, save :: IMETHOD     ! numerical method for SOAP, 0= explicit, 1= implicit, 2=implicit semi-dynamic 
   integer, save :: with_oligomerization!IOLIGO
@@ -94,24 +98,22 @@ module aInitialization
   integer, save :: cond_time_index(3) ! store the index of ENO3, ECL and ENH4 for icut computation
   double precision, save :: Cut_dim   ! value of the user-chosen parameter. Depending on tag_icut.   
 
-  ! genoa add for chemistry
-  integer, save :: ncst_chem, nRO2_chem, ncst_aero ! number of species
-  integer, save :: iRO2, iRO2_cst, iSumM, tag_SumM ! index in gas species list
-  integer, save :: tag_RO2 ! 0 for without RO2, 1 for simulated with generated RO2 only, 2 for with background RO2 only, 3 for with background + generated RO2
-
-  integer, dimension(:), allocatable, save :: cstindex, RO2index, cst_aero_index ! index
-  double precision, dimension(:,:), allocatable, save :: cinorg, cst_aero  ! unchanged conc.
-  double precision, dimension(:), allocatable, save :: RO2_pool
-
-  double precision, dimension(24) :: tmp_cinorg ! unchanged conc.
-  character (len=800), save :: cstindex_file ! File for species that need to be keep as constants.
-  character (len=800), save :: RO2index_file ! File for RO2 species.
-  character (len=800), save :: aero_cst_file ! File for constant aerosol species.
-  character (len=800), save :: ro2_conc_file ! File of ro2 concentrations
+  ! genoa add to run chemistry with constant profile
+  integer, save :: ncst_gas, nRO2_chem, ncst_aero, nRO2_group ! number of species
+  integer, save :: iRO2, iRO2_cst ! RO2 pool index in gas species list
+  integer, save :: tag_RO2 ! treat for RO2-RO2 reaction: 0 for without RO2, 1 for simulated with generated RO2 only, 2 for with background RO2 only, 3 for with background + generated RO2
+  integer, dimension(:), allocatable, save :: cst_gas_index, cst_aero_index ! index
+  integer, dimension(:), allocatable, save :: RO2index, RO2groups
+  double precision, dimension(:,:), allocatable, save :: cst_gas  ! unchanged conc. for gas phase species
+  double precision, dimension(:,:,:), allocatable, save :: cst_aero  ! unchanged conc. for aerosol phase species
+  character (len=800), save :: RO2_list_file ! File for RO2 species to generate the RO2 pool
+  character (len=800), save :: cst_gas_file ! File for species that need to be keep as constants.
+  character (len=800), save :: cst_aero_file ! File for constant aerosol species.
 
   ! generate error
-  logical, save :: ierr_ref, ierr_pre 
-  double precision, dimension(:), allocatable, save :: pre_soa, ref_soa, total_soa
+  logical, save :: ierr_ref, ierr_pre
+  integer, save :: nout_soa, nout_total, ivoc = 0
+  double precision, dimension(:,:), allocatable, save :: pre_soa, ref_soa, total_soa
   character (len=800), save :: ref_soa_conc_file ! File of reference SOA conc
   character (len=800), save :: pre_soa_conc_file ! File of previous SOA conc
 
@@ -282,11 +284,12 @@ module aInitialization
   double precision ,dimension(:), allocatable, save :: soa_part_coef!(m3/microg)
   double precision ,dimension(:), allocatable, save :: molecular_weight! (\B5g/mol) gas=phase
   double precision ,dimension(:), allocatable, save :: saturation_vapor_pressure! (in torr)
-  double precision ,dimension(:), allocatable, save :: henryslaw
   double precision ,dimension(:), allocatable, save :: enthalpy_vaporization! (in kJ/mol)
-  character(len=800),dimension(:), allocatable, save :: smiles ! (\B5g/mol) gas=phase !genoa
+  character(len=800),dimension(:), allocatable, save :: smiles ! (\B5g/mol) gas=phase
   
   integer ,dimension(:), allocatable, save :: inon_volatile 
+
+  character(len=4),dimension(:), allocatable, save :: partitioning ! HPHO HPHI BOTH
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   integer, dimension(:), allocatable, save :: Ncoefficient, index_first, index_second
@@ -312,6 +315,7 @@ module aInitialization
   character (len=800), save :: init_gas_conc_file ! File for gas-phase initial conc.
   character (len=800), save :: species_list_file ! File for species list.
   character (len=800), save :: aerosol_species_list_file ! File for species list.
+  character (len=800), save :: aerosol_structure_file ! File for species list.
   character (len=800), save :: namelist_species ! Namelist file for species list.
   character (len=800), save :: particles_composition_file ! File for particles composition
   character (len=800), save :: emis_gas_file
@@ -359,7 +363,7 @@ module aInitialization
   !   true if it is running standalone, default
   !   false if it is running with an external tool
   !
-  logical(kind=c_bool), save :: ssh_standalone = .false. !genoa
+  logical(kind=c_bool), save :: ssh_standalone = .false. !zhizhao
   !
   ! This flag defines if SSH-aerosol is logging information to a file
   !   true if it is writing to a file
@@ -415,8 +419,8 @@ contains
     namelist /initial_condition/ with_init_num, tag_init, tag_dbd, N_sizebin,&
          wet_diam_estimation, init_gas_conc_file,&
          init_aero_conc_mass_file, init_aero_conc_num_file, &
-         cstindex_file, aero_cst_file, ro2_conc_file, & !genoa add more input data
-         ref_soa_conc_file, pre_soa_conc_file !genoa add error analysis file
+         cst_gas_file, cst_aero_file, &
+         ref_soa_conc_file, pre_soa_conc_file !zhizhao add error analysis file
          
     namelist /initial_diam_distribution/ diam_input
 
@@ -429,14 +433,14 @@ contains
 
     namelist /gas_phase_species/ species_list_file
 
-    namelist /aerosol_species/ aerosol_species_list_file
+    namelist /aerosol_species/ aerosol_species_list_file,aerosol_structure_file
 
     namelist /physic_gas_chemistry/ tag_chem, attenuation, option_photolysis, &
          time_update_photolysis, & 
          with_heterogeneous, with_adaptive, &
          adaptive_time_step_tolerance, min_adaptive_time_step, &
-	     RO2index_file, tag_RO2, & ! genoa treatment for ro2 reactions
-         tag_SumM, n_output_aero, n_output_gas, & ! genoa simplified output data
+	     RO2_list_file, tag_RO2, &
+         n_output_aero, n_output_gas, & ! zhizhao simplified output data
          photolysis_dir, photolysis_file, &
          n_time_angle, time_angle_min, delta_time_angle, &
          n_latitude, latitude_min, delta_latitude, &
@@ -453,12 +457,13 @@ contains
          with_kelvin_effect, tequilibrium,&
          dorg, coupled_phases, activity_model, epser, epser_soap, niter_eqconc, niter_water
 
-    namelist /physic_nucleation/ with_nucl, nucl_model
+    namelist /physic_nucleation/ with_nucl, nucl_model_binary, nucl_model_ternary, &
+         scal_ternary, nucl_model_hetero, scal_hetero, nesp_org_h2so4_nucl,name_org_h2so4_nucl_species
 
     namelist /physic_organic/ with_oligomerization
 
     namelist /output/ output_directory, output_type, particles_composition_file, &
-                      output_aero, output_gas !genoa
+                      output_aero, output_gas !zhizhao
 
     if (ssh_standalone) write(*,*) "=========================start read namelist.ssh file======================"
     if (ssh_logger) write(logfile,*) "=========================start read namelist.ssh file======================"
@@ -467,12 +472,12 @@ contains
 
     ! Use default values if they are not given in namelist.ssh
 
-    if (ssh_standalone) then !genoa
+    if (ssh_standalone) then !zhizhao
     ! And write to namelist.out
     nml_out = 101
     namelist_out = "namelist.out"
     open(nml_out, file = namelist_out)
-    endif !genoa
+    endif !zhizhao
 
     ! meteorological setup
     meteo_file = ""
@@ -483,6 +488,8 @@ contains
        if (ssh_logger) write(logfile,*) "File for meteorological data is not given."
        imeteo = .false.
     else
+       if (ssh_standalone) write(*,*) "File for meteorological data is read from file",trim(meteo_file)
+       if (ssh_logger) write(logfile,*) "File for meteorological data is read from file",trim(meteo_file)
        imeteo = .true.
     endif
 
@@ -557,16 +564,16 @@ contains
     ! initial_condition
     wet_diam_estimation = -999
 
-    ! init genoa
-    cstindex_file= "---"
-    aero_cst_file = "---"
+    ! init genoa files
+    cst_gas_file= "---"
+    cst_aero_file = "---"
     ref_soa_conc_file = "---"
     pre_soa_conc_file = "---"
-    ro2_conc_file = "---"
+    
     ierr_ref = .false. ! default: not compute error
     ierr_pre = .false.
-    allocate(total_soa(nt))
-        
+    !allocate(total_soa(nout_soa,nt))
+
     read(10, nml = initial_condition, iostat = ierr)
 
     if (ierr .ne. 0) then
@@ -759,6 +766,7 @@ contains
        if (ssh_logger) write(logfile,*) 'gas phase species file :', trim(species_list_file)
     end if
 
+    aerosol_structure_file="---"
     read(10, nml = aerosol_species, iostat = ierr)
     if (ierr .ne. 0) then
        write(*,*) "aerosol_species data can not be read."
@@ -766,6 +774,12 @@ contains
     else
        if (ssh_standalone) write(*,*) 'particle species file :', trim(aerosol_species_list_file)
        if (ssh_logger) write(logfile,*) 'particle species file :', trim(aerosol_species_list_file)
+       if (aerosol_structure_file.ne."---") then
+          if (ssh_standalone) write(*,*) 'Read aerosol structure from file :', & 
+                trim(aerosol_structure_file)
+          if (ssh_logger) write(logfile,*) 'Read aerosol structure from file :', & 
+                trim(aerosol_structure_file)
+       endif
     end if
 
     ! gas chemistry
@@ -787,10 +801,9 @@ contains
     altitude_photolysis_input = -999.d0
     tag_twostep = 0
 
-    ! init genoa
+    ! init genoa files: RO2 reaction
     tag_RO2 = 0
-    tag_SumM = 0
-    RO2index_file="---"
+    RO2_list_file="---"
     n_output_aero = 0
     n_output_gas = 0
 
@@ -1123,7 +1136,7 @@ contains
        endif
 
        
-       if (with_cond == 1)  then ! defalut
+       if (with_cond == 1)  then ! default
           if (ssh_standalone) write(*,*) '! ! ! with condensation/ evaporation.'
           if (ssh_logger) write(logfile,*) '! ! ! with condensation/ evaporation.'
 
@@ -1181,9 +1194,8 @@ contains
        if(coupled_phases == 1) then
           i_hydrophilic = 1 
           if(ISOAPDYN == 0) then
-            if (ssh_standalone) write(*,*) 'Phases can not be coupled if ISOAPDYN = 0'
-            if (ssh_logger) write(logfile,*) 'Phases can not be coupled if ISOADYN = 0'
-            !coupled_phases = 0 !??? genoa
+          !  if (ssh_standalone) write(*,*) 'Phases can not be coupled if ISOAPDYN = 0'
+          !  if (ssh_logger) write(logfile,*) 'Phases can not be coupled if ISOADYN = 0'
             i_hydrophilic = 0
           endif
        else 
@@ -1192,28 +1204,72 @@ contains
     end if
 
     ! nucleation
+    nucl_model_binary = 0
+    nucl_model_ternary = 0
+    scal_ternary = 1.0
+    nucl_model_hetero = 0
+    scal_hetero = 0.1            
+    nesp_org_h2so4_nucl = 0
+    name_org_h2so4_nucl_species(1) = 'none'
+    name_org_h2so4_nucl_species(2) = 'none'
+
     read(10, nml = physic_nucleation, iostat = ierr)
     if (ierr .ne. 0) then
        write(*,*) "physic_nucleation data can not be read."
        stop
     else
        if (with_nucl == 1) then
+          if (nucl_model_binary == -999) nucl_model_binary = 0
+          if (nucl_model_ternary == -999) nucl_model_ternary = 0
+          if (nucl_model_hetero == -999) nucl_model_hetero = 0
+             
           if (ssh_standalone) write(*,*) '! ! ! with nucleation. -- Need to have lower diameter about 1nm.'
           if (ssh_logger) write(logfile,*) '! ! ! with nucleation. -- Need to have lower diameter about 1nm.'
-          if (nucl_model == 0) then
-             if (ssh_standalone) write(*,*) 'nucleation model : binary'
-             if (ssh_logger) write(logfile,*) 'nucleation model : binary'
-          else 
-             nucl_model = 1
-             if (ssh_standalone) write(*,*) 'nucleation model : ternary'
-             if (ssh_logger) write(logfile,*) 'nucleation model : ternary'
-          end if
-       else
-          with_nucl = 0   ! defalut
-          if (ssh_standalone) write(*,*) 'Without nucleation.'
-          if (ssh_logger) write(logfile,*) 'Without nucleation.'
-       end if
-    end if
+          if (nucl_model_binary == 0) then
+             if (ssh_standalone) write(*,*) ' No binary nucleation'
+             if (ssh_logger) write(logfile,*) 'No binary nucleation'
+          else
+             if (nucl_model_binary == 1) then
+                if (ssh_standalone) write(*,*) 'nucleation model : binary Veahkamaki'
+                if (ssh_logger) write(logfile,*) 'nucleation model : binary Veahkamaki'
+             else 
+                if (nucl_model_binary == 2) then
+                   if (ssh_standalone) write(*,*) 'nucleation model : binary Kuang'
+                   if (ssh_logger) write(logfile,*) 'nucleation model : binary Kuang'
+                endif
+             endif
+          endif
+          if (nucl_model_ternary == 0) then
+             if (ssh_standalone) write(*,*) ' No ternary nucleation'
+             if (ssh_logger) write(logfile,*) 'No ternary nucleation'
+          else
+             if(scal_ternary == -999.d0) scal_ternary = 1
+             if (nucl_model_ternary == 1) then
+                if (ssh_standalone) write(*,*) 'nucleation model : ternary Napari - scaling:',scal_ternary
+                if (ssh_logger) write(logfile,*) 'nucleation model : ternary Napari - scaling:',scal_ternary
+             else 
+                if (nucl_model_ternary == 2) then
+                  if (ssh_standalone) write(*,*) 'nucleation model : ternary Merikanto - scaling:',scal_ternary
+                  if (ssh_logger) write(logfile,*) 'nucleation model : ternary Merikanto - scaling:',scal_ternary
+               endif
+             endif
+          endif
+           if (nucl_model_hetero == 0) then
+             if (ssh_standalone) write(*,*) ' No heteromolecular nucleation'
+             if (ssh_logger) write(logfile,*) 'No heteromolecular nucleation'
+          else
+             if(scal_hetero == -999.d0) scal_hetero = 1
+             if (nucl_model_hetero == 1) then
+                if(nesp_org_h2so4_nucl.GT.2) then
+                  if (ssh_standalone) write(*,*) 'nucleation model : heteromolecular - no more than 2 species',nesp_org_h2so4_nucl
+                  if (ssh_logger) write(logfile,*) 'nucleation model : heteromolecular- no more than 2 species',nesp_org_h2so4_nucl
+                endif   
+                if (ssh_standalone) write(*,*) 'nucleation model : heteromolecular',scal_hetero
+                if (ssh_logger) write(logfile,*) 'nucleation model : heteromolecular',scal_hetero
+             endif
+          endif
+      endif
+    endif
 
     ! organic
     read(10, nml = physic_organic, iostat = ierr)
@@ -1222,12 +1278,12 @@ contains
        stop
     else
        if (with_oligomerization == 1) then
-          if (ssh_standalone) write(*,*) 'with oligomerization.'
-          if (ssh_logger) write(logfile,*) 'with oligomerization.'
+          if (ssh_standalone) write(*,*) 'with oligomerization of aldehydes.'
+          if (ssh_logger) write(logfile,*) 'with oligomerization of aldehydes.'
        else
-          with_oligomerization = 0   ! defalut
-          if (ssh_standalone) write(*,*) 'without oligomerization.'
-          if (ssh_logger) write(logfile,*) 'without oligomerization.'
+          with_oligomerization = 0   ! default
+          if (ssh_standalone) write(*,*) 'without oligomerization of aldehydes.'
+          if (ssh_logger) write(logfile,*) 'without oligomerization of aldehydes.'
        end if
     end if
 
@@ -1243,7 +1299,7 @@ contains
             wet_diam_estimation = 0 ! Compute water content if full equilibrium
     endif
 
-    !genoa
+    !zhizhao
     if (n_output_aero .gt. 0) then
         allocate(output_aero(n_output_aero))
         allocate(output_aero_index(n_output_aero))
@@ -1276,7 +1332,7 @@ contains
        if (output_type == 2) then
           if (ssh_standalone) write(*,*) 'results are saved in binary files.'
           if (ssh_logger) write(logfile,*) 'results are saved in binary files.'
-       else if (output_type == 0) then !genoa add type for no output
+       else if (output_type == 0) then !zhizhao add type for no output
           if (ssh_standalone) write(*,*) 'No output results.'
           if (ssh_logger) write(logfile,*) 'No output results.'
        else
@@ -1292,7 +1348,7 @@ contains
 
     close(10)
 
-    if (ssh_standalone) then !genoa
+    if (ssh_standalone) then !zhizhao
     ! Write to namelist.out
     write(nml_out, setup_meteo)
     write(nml_out, setup_time)
@@ -1311,7 +1367,7 @@ contains
     write(nml_out, physic_organic)
     write(nml_out, output)
     close(nml_out)
-    endif !genoa
+    endif !zhizhao
 
     if (ssh_standalone) write(*,*) "=========================finish read namelist.ssh file======================"
     if (ssh_logger) write(logfile,*) "=========================finish read namelist.ssh file======================"
@@ -1335,17 +1391,19 @@ contains
     integer:: nspecies
     integer :: k,i,j,s,js, ind, count, ierr, ilayer, esp_layer, nline, N_count,icoun,s2
     double precision :: tmp
-    double precision, dimension(:), allocatable :: tmp_aero
+    double precision, dimension(:), allocatable :: tmp_aero, tmp_fgls
     character (len=40) :: ic_name, sname, tmp_name
     integer :: species,aerosol_type_tmp,Index_groups_tmp,inon_volatile_tmp,found_spec
     double precision :: molecular_weight_aer_tmp,collision_factor_aer_tmp, molecular_diameter_tmp
     double precision :: surface_tension_tmp, accomodation_coefficient_tmp, mass_density_tmp
-    double precision :: saturation_vapor_pressure_tmp,enthalpy_vaporization_tmp,henryslaw_tmp    
+    double precision :: saturation_vapor_pressure_tmp,enthalpy_vaporization_tmp    
     character (len=40),dimension(nspecies) :: name_input_species
-    character (len=800) :: smiles_tmp !genoa
+    character (len=800) :: smiles_tmp
     character (len=40) :: aerosol_species_name_tmp, char1,char2
     character (len=40) :: precursor_tmp
     integer,dimension(nspecies) :: index_species_ssh
+    
+    character (len=4) :: partitioning_tmp
 
     index_species_ssh(:)=-1
 
@@ -1379,6 +1437,8 @@ contains
     close(11)
 
     ! read aerosol species namelist ! unit = 12
+    nout_soa = 0! init zhizhao ! not complete in spec!!!
+    nout_total = 0
     open(unit = 12, file = aerosol_species_list_file, status = "old")
     count = 0
     ierr = 0
@@ -1407,7 +1467,8 @@ contains
     allocate(smiles(N_aerosol))
     allocate(saturation_vapor_pressure(N_aerosol))
     allocate(enthalpy_vaporization(N_aerosol))    
-    allocate(henryslaw(N_aerosol))
+    
+    allocate(partitioning(N_aerosol))
     
     allocate(Vlayer(nlayer))    
     ! relation between Aerosol and GAS
@@ -1435,9 +1496,8 @@ contains
             precursor_tmp, &
             collision_factor_aer_tmp, molecular_diameter_tmp, &
             surface_tension_tmp, accomodation_coefficient_tmp, &
-            mass_density_tmp, inon_volatile_tmp, smiles_tmp, &
-            saturation_vapor_pressure_tmp,enthalpy_vaporization_tmp, &
-            henryslaw_tmp       
+            mass_density_tmp, inon_volatile_tmp, partitioning_tmp, smiles_tmp, &
+            saturation_vapor_pressure_tmp,enthalpy_vaporization_tmp       
 
        found_spec=0
        do j=1,nspecies          
@@ -1467,15 +1527,22 @@ contains
           accomodation_coefficient(s)=accomodation_coefficient_tmp
           mass_density(s)=mass_density_tmp
           inon_volatile(s)=inon_volatile_tmp
+          partitioning(s)=partitioning_tmp
           smiles(s)=smiles_tmp
           saturation_vapor_pressure(s)=saturation_vapor_pressure_tmp
           enthalpy_vaporization(s)=enthalpy_vaporization_tmp
-          henryslaw(s)=henryslaw_tmp
 
           if((inon_volatile(s).NE.1).AND.(inon_volatile(s).NE.0)) then
              write(*,*) "non_volatile should be 0 or 1", inon_volatile(s),s
              stop
           endif
+          
+          if((partitioning(s).NE."HPHO").AND.(partitioning(s).NE."HPHI").AND.(partitioning(s).NE."BOTH").AND. &
+             (trim(partitioning(s)).NE."--")) then
+             write(*,*) "partitioning should be --, HPHO, HPHI or BOTH, aerspec nb ", s," : ", partitioning(s)
+             stop
+          endif
+          
           ! Find pairs of aerosol species and its precursor.
           ind = 0
           do js = 1, N_gas
@@ -1663,14 +1730,16 @@ contains
              concentration_gas_all(js) = tmp
              ind = 1
           endif
-          if (ind == 1) exit
+          if (ind.ge.1) exit
        enddo
+
        if (ind .eq. 0) then
           if (ssh_standalone) write(*,*) "Error: wrong species name is given ",&
               trim(init_gas_conc_file), trim(ic_name)
           if (ssh_logger) write(logfile,*) "Error: wrong species name is given ",&
               trim(init_gas_conc_file), trim(ic_name)
        endif
+
     enddo
     close(21)
     if (ssh_standalone) write(*,*) 'gas concentrations have been read'
@@ -1753,6 +1822,47 @@ contains
        end if
     end if
 
+    ! read aerosol structure file
+    if (aerosol_structure_file.ne."---") then
+      open(unit = 25, file = aerosol_structure_file, status = "old")
+        ! count comment lines and the number of input aerosol structures
+        count = 0 
+        ierr = 0
+        nline = 0
+        do while(ierr .eq. 0)
+           read(25, *, iostat=ierr) tmp_name
+           if (ierr == 0) then
+              ! read comment lines
+              if (trim(tmp_name) .eq. "#") then
+                 nline = nline + 1
+              else
+                 count = count + 1
+              end if
+           end if
+        end do
+        ! read
+        rewind 25
+        do s = 1, nline
+           read(25, *) ! read comment lines.
+        end do
+        allocate(tmp_fgls(60)) !read unifac founctional groups (60)
+        do s= 1, count
+           ! name, unifac groups
+           read(25,*) ic_name, (tmp_fgls(k), k = 1, 60)
+           do js=1, N_aerosol
+              if (aerosol_species_name(js).eq.ic_name) then
+                 ! update smiles in the format &1.23E+02&1.00E+01&...
+                 smiles(js)='' !init
+                 do k=1, 60 !update
+                    write(char1,'(A1,ES8.2)') "&",tmp_fgls(k)
+                    smiles(js)=trim(smiles(js))//trim(char1)
+                 enddo
+                 !print*,aerosol_species_name(js),smiles(js)
+              endif
+           enddo
+        enddo
+      close(25)
+    endif
 
     ! ! ! ! ! ! 
     if (tag_emis == 1) then  ! with internal emission 
@@ -1911,45 +2021,70 @@ contains
     allocate(photolysis_reaction_index(n_photolysis))
     allocate(photolysis_rate(n_photolysis))
     photolysis_rate = 0.d0
-     
-    open(unit = 34, file = photolysis_file, status = "old")
-    count = 0 
-    ierr = 0
-    nline = 0
-    do while(ierr .eq. 0)
-       read(34, *, iostat=ierr) tmp_name
-       if (ierr == 0) then
-          if (trim(tmp_name) .eq. "#") then
-             nline = nline + 1
-          else
-             count = count + 1
-          end if
-       end if
-    end do
 
-    if (count .ne. n_photolysis) then
-       write(*,*) "Error: number of files for photolysis rate should be ", &
-            n_photolysis
-       write(*,*) "However, the number of given files is ", count
-       stop
-    end if
-       
-    rewind 34
-    do s = 1, nline
-       read(34, *) ! read comment lines.
-    end do
-    do s = 1, count
-       read(34, *) photolysis_name(s), photolysis_reaction_index(s)
-       if (photolysis_name(s) == "BiPER") then
-          ind_kbiper = s    ! photolysis index for BiPER
-       end if
-    end do
-    close(34)
+    if (option_photolysis .ne. 1) then !do not read photolysis file if not needed     
+      open(unit = 34, file = photolysis_file, status = "old")
+      count = 0 
+      ierr = 0
+      nline = 0
+      do while(ierr .eq. 0)
+         read(34, *, iostat=ierr) tmp_name
+         if (ierr == 0) then
+            if (trim(tmp_name) .eq. "#") then
+               nline = nline + 1
+            else
+               count = count + 1
+            end if
+         end if
+      end do
+  
+      if (count .ne. n_photolysis) then
+         write(*,*) "Error: number of files for photolysis rate should be ", &
+              n_photolysis
+         write(*,*) "However, the number of given files is ", count
+         stop
+      end if
+         
+      rewind 34
+      do s = 1, nline
+         read(34, *) ! read comment lines.
+      end do
+      do s = 1, count
+         read(34, *) photolysis_name(s), photolysis_reaction_index(s)
+         if (photolysis_name(s) == "BiPER") then
+            ind_kbiper = s    ! photolysis index for BiPER
+         end if
+      end do
+      close(34)
+      
+    else
+      do s = 1, n_photolysis
+        photolysis_name(s) = "useless"
+        photolysis_reaction_index(s) = s
+      end do
     
+    endif
+
+    if(nucl_model_hetero == 1) then
+       do s=1,nesp_org_h2so4_nucl
+          !ifound = 0
+          do i = 1,N_gas
+             write(*,*) species_name(i),name_org_h2so4_nucl_species(s)
+             if(species_name(i) == name_org_h2so4_nucl_species(s)) then
+                org_h2so4_nucl_species(s) = i
+                if (ssh_standalone) write(*,*) "Nucl. species found",species_name(i)
+                if (ssh_logger) write(logfile,*) "Nucl. species found",species_name(i)
+           !     ifound = 1
+             endif
+           enddo
+       enddo
+    endif
+
     if (ssh_standalone) write(*,*) "=========================finish read inputs file======================"
     if (ssh_logger) write(logfile,*) "=========================finish read inputs file======================"
 
     if (allocated(tmp_aero))  deallocate(tmp_aero)
+    if (allocated(tmp_fgls))  deallocate(tmp_fgls)
   end subroutine ssh_read_inputs_spec
 
 
@@ -1959,45 +2094,14 @@ contains
     implicit none
     integer :: k,i,j,s,js, ind, count, ierr, ilayer, esp_layer, nline, s2
     double precision :: tmp
-    double precision, dimension(:), allocatable :: tmp_aero
+    double precision, dimension(:), allocatable :: tmp_aero, tmp_read, tmp_fgls
     character (len=40) :: ic_name, sname, tmp_name, char1, char2
-
+    CHARACTER(len=40) :: ivocout(3), ivocstr
+    
     ! read gas-phase species namelist ! unit = 11
     allocate(molecular_weight(N_gas))
     allocate(species_name(N_gas))
 
-    ! genoa !change it to read from file: species.spack.dat
-    count = index(species_list_file, 'species.spack.dat')
-    if (count .ne. 0) then
-        open(unit = 11, file = species_list_file, status = "old")
-        count = 0
-        ierr = 0
-        ind = 0
-        s = 0 ! index
-        do while(s.ne.N_gas)
-            if (ind.eq.0) then ! not find the start line
-                read(11, *, iostat=ierr) char1
-                if (ierr == 0) then
-                    count = count + 1 ! line number
-                    if (trim(char1).eq.'[molecular_weight]') ind = count !start to read
-                endif
-            else ! read species
-                s = s + 1
-                read(11, *) species_name(s), molecular_weight(s)
-                !print*, N_gas, s, species_name(s), molecular_weight(s)
-                if (molecular_weight(s).le. 0.d0) then
-                     print*,'Error: input MWs <= 0',s, species_name(s),&
-                                    molecular_weight(s)
-                     stop
-                endif
-            endif
-        end do
-        if (ssh_standalone) write(*,*) 'read gas-phase species list.'
-        if (ssh_logger) write(logfile,*) 'read gas-phase species list.'
-
-        close(11)
-
-    else ! genoa !normal read
     open(unit = 11, file = species_list_file, status = "old")
     count = 0
     ierr = 0
@@ -2005,7 +2109,7 @@ contains
        read(11, *, iostat=ierr)
        if (ierr == 0) count = count + 1
     end do
-
+    
     if (ssh_standalone) write(*,*) 'read gas-phase species list.'
     if (ssh_logger) write(logfile,*) 'read gas-phase species list.'
     if (N_gas == count - 1) then   ! minus the first comment line
@@ -2015,7 +2119,7 @@ contains
        write(*,*) 'Given gas-phase species list does not fit chem() setting.'
        stop
     end if
-
+    
     rewind 11
     read(11, *)  ! read the first comment line
     do s = 1, N_gas
@@ -2027,9 +2131,10 @@ contains
        endif
     enddo
     close(11)
-    endif !genoa
-
+    
     ! read aerosol species namelist ! unit = 12
+    nout_soa = 1! init zhizhao
+    nout_total = 0
     open(unit = 12, file = aerosol_species_list_file, status = "old")
     count = 0
     ierr = 0
@@ -2040,7 +2145,7 @@ contains
     if (ssh_standalone) write(*,*) 'read aerosol species list.'
     if (ssh_logger) write(logfile,*) 'read aerosol species list.'
     N_aerosol = count - 1  ! minus the first comment line
-
+    
 
     allocate(aerosol_species_name(N_aerosol))
     spec_name_len = len(aerosol_species_name(1))
@@ -2061,16 +2166,19 @@ contains
     allocate(smiles(N_aerosol))
     allocate(saturation_vapor_pressure(N_aerosol))
     allocate(enthalpy_vaporization(N_aerosol))
-    allocate(henryslaw(N_aerosol))
-    
     aerosol_species_interact = 0
     inon_volatile = 0
+    
+    allocate(partitioning(N_aerosol))
 
+    
     ! Read lines from aerosol species file.
     rewind 12
     count = 0
     read(12, *) ! Read a header line (#)
+    
     do s = 1, N_aerosol
+       
        ! Surface_tension for organic and aqueous phases of organic aerosols
        ! is hardly coded in SOAP/parameters.cxx
        ! And Unit used in SOAP is different to surface_tension (N/m) by 1.e3.
@@ -2079,16 +2187,16 @@ contains
             precursor, &
             collision_factor_aer(s), molecular_diameter(s), &
             surface_tension(s), accomodation_coefficient(s), &
-            mass_density(s), inon_volatile(s), smiles(s), &
-            saturation_vapor_pressure(s),enthalpy_vaporization(s), &
-            henryslaw(s)
-        !if (smiles(s).eq.'-') then
-        !    print*,trim(aerosol_species_name(s)),saturation_vapor_pressure(s), henryslaw(s) !genoa!!
-        !endif
-
+            mass_density(s), inon_volatile(s), partitioning(s), smiles(s), &
+            saturation_vapor_pressure(s),enthalpy_vaporization(s)
         if((inon_volatile(s).NE.1).AND.(inon_volatile(s).NE.0)) then
             write(*,*) "non_volatile should be 0 or 1", inon_volatile(s),s
             stop
+        endif
+        if((partitioning(s).NE."HPHO").AND.(partitioning(s).NE."HPHI").AND.(partitioning(s).NE."BOTH").AND. &
+           (trim(partitioning(s)).NE."--")) then
+           write(*,*) "partitioning should be --, HPHO, HPHI or BOTH, aerspec nb ", s," : ", partitioning(s)
+           stop
         endif
        ! Find pairs of aerosol species and its precursor.
        ind = 0
@@ -2110,6 +2218,8 @@ contains
        endif
     enddo
     close(12)
+    
+    
     ! Safety check if index_groups is used
     if (tag_external.eq.1) then
        if (minval(Index_groups(1:N_aerosol_Layers-1)).lt.1) then
@@ -2143,6 +2253,7 @@ contains
        ! Water   
        else if (aerosol_type(s) == 9) then
           EH2O = s
+          !nout_soa = Index_groups(s)+1 !zhizhao assign the number of species, 1 for total soa
        end if
     end do
     N_inorganic = nesp_isorropia
@@ -2156,11 +2267,15 @@ contains
     if (ssh_logger) write(logfile,*) "   --- Number of organic species:", N_organics
     if (ssh_standalone) write(*,*) "   --- Index for water:", EH2O
     if (ssh_logger) write(logfile,*) "   --- Index for water:", EH2O
+    ! zhizhao
+    if (ssh_standalone) write(*,*) "   --- Index of SOA output:", nout_soa
+    if (ssh_logger) write(logfile,*) "   --- Index of SOA output:", nout_soa
 
     ! Allocate aerosol arrays
     N_nonorganics = N_aerosol - N_organics -1 ! Remove organics and water
     N_aerosol_layers = N_organics * (nlayer-1 + i_hydrophilic) + N_aerosol
     EH2O_layers = N_aerosol_layers
+
     allocate(mass_density_layers(N_aerosol_layers))
     allocate(List_species(N_aerosol_layers))
     allocate(layer_number(N_aerosol_layers))
@@ -2168,7 +2283,7 @@ contains
     allocate(isorropia_species_name(nesp_isorropia))
     allocate(aec_species(nesp_aec))
     allocate(aec_species_name(nesp_aec))
-
+    
     ! Read aerosol species name.
     js = 0
     i = 0
@@ -2250,7 +2365,17 @@ contains
     concentration_gas_all = 0.d0 ! set original value to 0
     allocate(concentration_gas(N_aerosol))
     concentration_gas=0.d0
-
+    
+    ! ivoc
+    if (ivoc.gt.0) then
+        ivocout(1) = 'APINENE'
+        ivocout(2) = 'BPINENE'
+        ivocout(3) = 'LIMONENE'
+        write(ivocstr,'(I1)') ivoc
+        output_directory = trim(output_directory)//'.'//trim(ivocstr)
+        !print*,'output_directory: ', output_directory
+    endif
+    
     open(unit = 21, file = init_gas_conc_file, status = "old")
     count = 0 
     ierr = 0
@@ -2268,16 +2393,33 @@ contains
        ind = 0
        do js = 1, N_gas
           if (species_name(js) .eq. ic_name) then
-             concentration_gas_all(js) = tmp
-             ind = 1
+             if (ivoc.gt.0 .and. any(ivocout.eq.ic_name)) then
+                 if (ivoc.eq.1 .and. ic_name.eq.ivocout(1)) then
+                     concentration_gas_all(js) = tmp !3ppb
+                 elseif (ivoc.eq.2.and.ic_name.eq.ivocout(2)) then
+                     concentration_gas_all(js) = tmp*3 !1ppb
+                 elseif (ivoc.eq.3.and.ic_name.eq.ivocout(3)) then
+                     concentration_gas_all(js) = tmp*3 !1ppb
+                 endif 
+                 ind = 2 ! not use this concs
+             else
+                 concentration_gas_all(js) = tmp
+                 ind = 1
+             endif
           endif
-          if (ind == 1) exit
+          if (ind.ge.1) exit
        enddo
+
        if (ind .eq. 0) then
           if (ssh_standalone) write(*,*) "Error: wrong species name is given ",&
               trim(init_gas_conc_file), trim(ic_name)
           if (ssh_logger) write(logfile,*) "Error: wrong species name is given ",&
               trim(init_gas_conc_file), trim(ic_name)
+       elseif (ind.eq.2) then
+          if (ssh_standalone) write(*,*) "Input gas concs but not used: ",&
+              trim(ic_name), " ivoc: ",ivoc
+          if (ssh_logger) write(logfile,*) "Input gas concs but not used: ",&
+              trim(ic_name), " ivoc: ",ivoc
        endif
     enddo
     close(21)
@@ -2514,55 +2656,68 @@ contains
         enddo
     endif
 
-    if (option_photolysis.eq.2) then! genoa ! avoid reading photolysis file
-        ! read input file for photolysis rate (unit 34)
-        allocate(photolysis_name(n_photolysis))
-        allocate(photolysis_reaction_index(n_photolysis))
-        allocate(photolysis_rate(n_photolysis))
-        photolysis_rate = 0.d0
+    ! read input file for photolysis rate (unit 34)
+    allocate(photolysis_name(n_photolysis))
+    allocate(photolysis_reaction_index(n_photolysis))
+    allocate(photolysis_rate(n_photolysis))
+    photolysis_rate = 0.d0
+    
+    if (option_photolysis .ne. 1) then !do not read photolysis file if not needed     
+      open(unit = 34, file = photolysis_file, status = "old")
+      count = 0 
+      ierr = 0
+      nline = 0
+      do while(ierr .eq. 0)
+         read(34, *, iostat=ierr) tmp_name
+         if (ierr == 0) then
+            if (trim(tmp_name) .eq. "#") then
+               nline = nline + 1
+            else
+               count = count + 1
+            end if
+         end if
+      end do
+  
+      if (count .ne. n_photolysis) then
+         write(*,*) "Error: number of files for photolysis rate should be ", &
+              n_photolysis
+         write(*,*) "However, the number of given files is ", count
+         stop
+      end if
          
-        open(unit = 34, file = photolysis_file, status = "old")
-        count = 0 
-        ierr = 0
-        nline = 0
-        do while(ierr .eq. 0)
-           read(34, *, iostat=ierr) tmp_name
-           if (ierr == 0) then
-              if (trim(tmp_name) .eq. "#") then
-                 nline = nline + 1
-              else
-                 count = count + 1
-              end if
-           end if
-        end do
+      rewind 34
+      do s = 1, nline
+         read(34, *) ! read comment lines.
+      end do
+      do s = 1, count
+         read(34, *) photolysis_name(s), photolysis_reaction_index(s)
+         if (photolysis_name(s) == "BiPER") then
+            ind_kbiper = s    ! photolysis index for BiPER
+         end if
+      enddo
+      close(34)
 
-        if (count .ne. n_photolysis) then
-           write(*,*) "Error: number of files for photolysis rate should be ", &
-                n_photolysis
-           write(*,*) "However, the number of given files is ", count
-           stop
-        end if
-           
-        rewind 34
-        do s = 1, nline
-           read(34, *) ! read comment lines.
-        end do
-        do s = 1, count
-           read(34, *) photolysis_name(s), photolysis_reaction_index(s)
-           if (photolysis_name(s) == "BiPER") then
-              ind_kbiper = s    ! photolysis index for BiPER
-           end if
-        end do
-        close(34)
     else
-        n_photolysis = 0
-        allocate(photolysis_name(n_photolysis))
-        allocate(photolysis_reaction_index(n_photolysis))
-        allocate(photolysis_rate(n_photolysis))
-    endif !genoa
+      do s = 1, n_photolysis
+        photolysis_name(s) = "useless"
+        photolysis_reaction_index(s) = s
+      enddo
+      
+    endif
+    
+    if(nucl_model_hetero == 1) then
+       do s=1,nesp_org_h2so4_nucl
+          do i = 1,N_gas
+              if(species_name(i) == name_org_h2so4_nucl_species(s)) then
+                org_h2so4_nucl_species(s) = i
+                if (ssh_standalone) write(*,*) "Nucl. species found ",species_name(i)
+                if (ssh_logger) write(logfile,*) "Nucl. species found ",species_name(i)
+             endif
+           enddo
+       enddo
+    endif
 
-! genoa for testing chemistry
-    !!!! read index for outputs aero/gas
+    ! assign output aero index
     do s = 1, n_output_aero
         do js = 1, N_aerosol
             if (aerosol_species_name(js) .eq. output_aero(s)) then
@@ -2578,6 +2733,7 @@ contains
         endif
     enddo
 
+    ! assign output gas index
     do s = 1, n_output_gas
         do js = 1, N_gas
             if (species_name(js) .eq. output_gas(s)) then
@@ -2593,105 +2749,56 @@ contains
         endif
     enddo
 
-    ! index for RO2, airm
-    iRO2 = 0
-    iSumM = 0
-    do js = 1, N_gas
-      if (species_name(js).eq."RO2") then
-          iRO2=js
-          if (ssh_standalone) print*,'RO2 index in gas-phase species',iRO2
-          !exit
-      elseif (species_name(js).eq."airm") then
-          iSumM=js
-          if (ssh_standalone) print*,'airm index in gas-phase species',iSumM
-      endif
-    enddo
-    if (iRO2 .eq. 0 ) then
-      if (ssh_standalone) write(*,*) "RO2 is not in the list",species_list_file
-      if (ssh_logger) write(logfile,*) "RO2 is not in the list",species_list_file
-      if (tag_RO2 .eq. 1 .or. tag_RO2 .eq. 3 .or. tag_RO2 .eq. 5) then ! need generated RO2
-          if (ssh_standalone) write(*,*) "Need generated RO2 but no RO2 index. tag_RO2 = ",tag_RO2
-          if (ssh_logger) write(logfile,*) "Need generated RO2 but no RO2 index. tag_RO2 = ",tag_RO2
-          stop
-      endif
-    endif
-
-    ! tag_RO2 read only if iRO2 != 0
-    if (iRO2 .ne. 0) then
-      if (tag_RO2 .eq. 0) then
-        if (ssh_standalone) print*,'Without RO2. tag_RO2 = ', tag_RO2
-      else if (tag_RO2 .eq. 1) then
-        if (ssh_standalone) print*,'With only generated RO2. tag_RO2 = ', tag_RO2
-      else if (tag_RO2 .eq. 2) then
-        if (ssh_standalone) print*,'With only background RO2. tag_RO2 = ', tag_RO2
-      else if (tag_RO2 .eq. 3) then
-        if (ssh_standalone) print*,'With background + generated RO2. tag_RO2 = ', tag_RO2
-      else if (tag_RO2 .eq. 4) then
-        if (ssh_standalone) print*,'RO2 concentrations are read from files. tag_RO2 = ', tag_RO2
-      else if (tag_RO2 .eq. 5) then
-        if (ssh_standalone) print*,'with RO2 from files + background. tag_RO2 = ', tag_RO2
-      else
-        print*,'Error: unknown input tag_RO2',tag_RO2
-        stop
-      endif
-    endif
-
-    if (tag_RO2 .ge. 4) then ! read ro2 file if tag_RO2 == 4,5
-      if (ro2_conc_file.ne."---") then
-        open(unit = 35, file = ro2_conc_file, status = "old")
-        
-        ! check number of values in the list
-        count = 0 
-        ierr = 0
-        nline = 0
-        do while(ierr .eq. 0)
-           read(35, *, iostat=ierr) tmp_name
-           if (ierr == 0) then
-              if (trim(tmp_name) .eq. "#") then
-                 nline = nline + 1
-              else
-                 count = count + 1
-              end if
-           end if
-        end do
-
-        ! check if count number == nt
-        if (nt.ne.count-1) then
-            write(*,*) "Error: not the same number", nt, count,trim(ro2_conc_file)
+    iRO2 = 0 ! init index for RO2
+    ! use RO2 if tag_RO2 is given
+    if (tag_RO2.ne.0) then
+        if (ssh_standalone) write(*,*) "Treat RO2-RO2 reaction:"
+        if (ssh_logger) write(logfile,*) "Treat RO2-RO2 reaction:"
+        ! RO2 index
+        do js = 1, N_gas
+          if (species_name(js).eq."RO2pool") then
+              iRO2=js
+              if (ssh_standalone) write(*,*) 'RO2 pool is found in gas-phase species with index ',iRO2
+              if (ssh_logger) write(logfile,*) 'RO2 pool is found in gas-phase species with index ',iRO2
+          endif
+        enddo
+        ! check RO2 index
+        if (iRO2 .eq. 0) then
+          if (ssh_standalone) write(*,*) "  RO2 pool is not in the list", trim(species_list_file)
+          if (ssh_logger) write(logfile,*) "  RO2 pool is not in the list", trim(species_list_file)
+          if (tag_RO2 .eq. 1 .or. tag_RO2 .eq. 3 ) then ! need generated RO2
+              if (ssh_standalone) write(*,*) "  Need generated RO2 pool but there is no RO2 pool index", &
+                 "in the species list. tag_RO2 = ",tag_RO2
+              if (ssh_logger) write(logfile,*) "  Need generated RO2 pool but there is no RO2 pool index", &
+                 "in the species list. tag_RO2 = ",tag_RO2
+              stop
+          endif
+        ! tag_RO2 read only if iRO2 != 0
+        end if
+        if (tag_RO2 .eq. 1) then
+            if (ssh_standalone) write(*,*) '  Use generated RO2 pool. tag_RO2 = ', tag_RO2
+            if (ssh_logger) write(logfile,*) '  Use generated RO2 pool. tag_RO2 = ', tag_RO2
+        else if (tag_RO2 .eq. 2) then
+            if (ssh_standalone) write(*,*) '  Use background RO2 pool. tag_RO2 = ', tag_RO2
+            if (ssh_logger) write(logfile,*) '  Use background RO2 pool. tag_RO2 = ', tag_RO2
+        else if (tag_RO2 .eq. 3) then
+            if (ssh_standalone) write(*,*) '  Use background + generated RO2 pool. tag_RO2 = ', tag_RO2
+            if (ssh_logger) write(logfile,*) '  Use background + generated RO2 pool. tag_RO2 = ', tag_RO2
+        else
+            if (ssh_standalone) write(*,*) 'Error: unknown input tag_RO2 = ',tag_RO2
+            if (ssh_logger) write(logfile,*) 'Error: unknown input tag_RO2 = ',tag_RO2
             stop
         endif
-        
-        ! read ref conc
-        allocate(RO2_pool(nt)) ! save ro2 conc
-        rewind 35
-        do s = 1, nline+1 ! not read the initial conc
-           read(35, *) ! read comment lines.
-        end do
-        do s= 1, nt
-           read(35,*) RO2_pool(s)
-        enddo
-        
-        ! print info
-        if (ssh_standalone) write(*,*) "Read ro2 concentration from file.", nt, &
-                                        count,trim(ro2_conc_file)
-        if (ssh_logger) write(logfile,*) "Read ro2 concentration from file.", nt, &
-                                        count,trim(ro2_conc_file)
-        close(35)
-      else
-        write(*,*) "tag_RO2 >= 4 but can not read input RO2 file.",tag_RO2, &
-                                       trim(ro2_conc_file)
-        stop
-      endif
     endif
 
     !!!! add cst areo profiles unit 24
     ncst_aero = 0
-    if (aero_cst_file .ne. "---") then ! with input cst aero file
+    if (cst_aero_file .ne. "---") then ! with input cst aero file
 
-        if (ssh_standalone) write(*,*) 'Particle conc. constant file :', aero_cst_file
-        if (ssh_logger) write(logfile,*) 'Particle conc. constant file :', aero_cst_file
+        if (ssh_standalone) write(*,*) 'Particle concentration constant file : ', trim(cst_aero_file)
+        if (ssh_logger) write(logfile,*) 'Particle concentration constant file : ', trim(cst_aero_file)
 
-        open(unit = 24, file = aero_cst_file, status = "old")
+        open(unit = 24, file = cst_aero_file, status = "old")
         count = 0
         ierr = 0
         nline = 0
@@ -2709,50 +2816,109 @@ contains
         ! number of constant aerosol species
         ncst_aero = count
         allocate(cst_aero_index(ncst_aero))
-        allocate(cst_aero(ncst_aero,24)) ! may need to change to each bin?
-        tmp_cinorg = 0.0
-
+        allocate(cst_aero(ncst_aero,N_sizebin,24))
+        if (.not.allocated(tmp_read)) allocate(tmp_read(24))
+        tmp_read = 0.0
+        i = 1
         rewind 24
         do s = 1, nline
            read(24, *) ! read comment lines.
         end do
         do s= 1, count
-           read(24,*) ic_name, (tmp_cinorg(k), k = 1, 24)
+           ! aerosol name, number of sizebin, concentrations per simulation time step
+           read(24,*) ic_name, (tmp_read(k), k = 1, 24) ! i
            ind = 0
            ! find index in aerosol list
            do js = 1, N_aerosol
                if (aerosol_species_name(js) .eq. ic_name) then
                    cst_aero_index(s) = js
                    do k = 1, 24
-                        cst_aero(s,k) = tmp_cinorg(k)
+                        ! for now assume N_size == N_sizebin.
+                        ! Need to be modified if use for external mixing
+                        if (i.gt.N_sizebin) then
+                            if (ssh_standalone) write(*,*) 'Error: Input number of bin >= N_sizebin', &
+                                  i,N_sizebin,ic_name,' ',trim(cst_aero_file)
+                            if (ssh_logger) write(logfile,*) 'Error: Input number of bin >= N_sizebin', &
+                                  i,N_sizebin,ic_name,' ',trim(cst_aero_file)
+                            stop
+                        endif
+                        cst_aero(s,i,k) = tmp_read(k)
                    enddo
                    ind = 1
-                   !print*,'!!!found',s,js,aerosol_species_name(js)
               endif
 
               if (ind  == 1) then
-                if (ssh_standalone) print*,'aerosol ',ic_name,' with index',js ,' is unchanged and evolve hourly.'
+                if (ssh_standalone) write(*,*) 'aerosol ',ic_name,' with index',js , &
+                    ' Concentrations are given at each time step.'
+              if (ssh_logger) write(logfile,*) 'aerosol ',ic_name,' with index',js , &
+                    ' Concentrations are given at each time step.'
                 exit
               endif
            enddo
            if (ind .eq. 0) then
-              print*,'!!!!!!!!!!!not found',ic_name
-              if (ssh_standalone) write(*,*) "Error: wrong aerosol species name is given ",aero_cst_file, ic_name
-              if (ssh_logger) write(logfile,*) "Error: wrong aerosol species name is given ",aero_cst_file, ic_name
+              if (ssh_standalone) write(*,*) "Error: wrong aerosol species name is given ",cst_aero_file, ic_name
+              if (ssh_logger) write(logfile,*) "Error: wrong aerosol species name is given ",cst_aero_file, ic_name
            endif
         enddo
         close(24)
     endif
 
+    ! read aerosol structure file
+    if (aerosol_structure_file.ne."---") then
+      open(unit = 25, file = aerosol_structure_file, status = "old")
+        ! count comment lines and the number of input aerosol structures
+        count = 0 
+        ierr = 0
+        nline = 0
+        do while(ierr .eq. 0)
+           read(25, *, iostat=ierr) tmp_name
+           if (ierr == 0) then
+              ! read comment lines
+              if (trim(tmp_name) .eq. "#") then
+                 nline = nline + 1
+              else
+                 count = count + 1
+              end if
+           end if
+        end do
+        ! read
+        rewind 25
+        do s = 1, nline
+           read(25, *) ! read comment lines.
+        end do
+        allocate(tmp_fgls(60)) !read unifac founctional groups (60)
+        do s= 1, count
+           ! name, unifac groups
+           read(25,*) ic_name, (tmp_fgls(k), k = 1, 60)
+           do js=1, N_aerosol
+              if (aerosol_species_name(js).eq.ic_name) then
+                 ! update smiles in the format &1.23E+02&1.00E+01&...
+                 smiles(js)='' !init
+                 do k=1, 60 !update
+                    write(char1,'(A1,ES8.2)') "&",tmp_fgls(k)
+                    smiles(js)=trim(smiles(js))//trim(char1)
+                 enddo
+                 !print*,aerosol_species_name(js),smiles(js)
+              endif
+           enddo
+        enddo
+      close(25)
+    endif
+
     ! read input cst_gas file
     ! init
     iRO2_cst = 0
-    ncst_chem = 0 ! number of gas species that are constants
+    ncst_gas = 0 ! number of gas species that are constants
     nRO2_chem = 0
+    nRO2_group = 0
 
     ! species that keep conc. constants in the simulation
-    if (cstindex_file.ne."---") then
-        open(unit = 34, file = cstindex_file, status = "old")
+    if (cst_gas_file.ne."---") then
+        open(unit = 34, file = cst_gas_file, status = "old")
+
+        if (ssh_standalone) write(*,*) 'Gas-phase concentration constant file : ', trim(cst_aero_file)
+        if (ssh_logger) write(logfile,*) 'Gas-phase concentration constant file : ', trim(cst_aero_file)
+
         count = 0 
         ierr = 0
         nline = 0
@@ -2769,69 +2935,74 @@ contains
         end do
 
         ! number of species that keep as constants
-        ncst_chem =count
-        allocate(cstindex(ncst_chem)) ! index of unchanged species
-        allocate(cinorg(ncst_chem,24))
-        tmp_cinorg = 0.0
+        ncst_gas =count
+        allocate(cst_gas_index(ncst_gas)) ! index of unchanged species
+        allocate(cst_gas(ncst_gas,24))
+        if (.not.allocated(tmp_read)) allocate(tmp_read(24))
+        tmp_read = 0.0
 
         rewind 34
         do s = 1, nline
            read(34, *) ! read comment lines.
         end do
         do s= 1, count
-           read(34,*) ic_name, (tmp_cinorg(k), k = 1, 24)
+           read(34,*) ic_name, (tmp_read(k), k = 1, 24)
            ind = 0
            do js = 1, N_gas
 
               if (species_name(js) .eq. ic_name) then
-                 cstindex(s)=js
+                 cst_gas_index(s)=js
 
-                 ! index for SumM_cst
-                 if (ic_name .eq. 'airm') then
-                     tag_SumM = 1
-                     if (ssh_standalone) print*,'constant SumM, tag_SumM = 1'
-                 !   iSumM_cst = js
-                 !   print*,'index for cst SumM', iSumM_cst
-                 endif
-
-                 if (iRO2 .ne. 0 .and. ic_name .eq. 'RO2') then
+                 if (iRO2 .ne. 0 .and. ic_name .eq. 'RO2pool') then
                     iRO2_cst = s
-                    if (ssh_standalone) print*,'index for cst background RO2 in cinorg', iRO2_cst
-                    if (ssh_standalone.and.tag_RO2 .lt. 2) print*,'constant RO2 is read but not used. tag_RO2 = ',tag_RO2
+                    if (ssh_standalone) write(*,*) 'Index for cst background RO2 pool in cst_gas list', iRO2_cst
+                    if (ssh_logger) write(logfile,*) 'Index for cst background RO2 pool in cst_gas list', iRO2_cst
+                    if (tag_RO2 .lt. 2) then
+                        if (ssh_standalone) write(*,*) 'Constant RO2 pool concentration, read but not used. tag_RO2 = ',tag_RO2
+                        if (ssh_logger) write(logfile,*) 'Constant RO2 pool concentration, read but not used. tag_RO2 = ',tag_RO2
+                    endif
                  endif
 
                  do k =1 ,24
-                    !cinorg(s)=concentration_gas_all(js)
-                    cinorg(s,k) = tmp_cinorg(k)
+                    !cst_gas(s)=concentration_gas_all(js)
+                    cst_gas(s,k) = tmp_read(k)
                  enddo
                  ind = 1
-                 !print*, ic_name,tmp_cinorg
+                 !print*, ic_name,tmp_read
               endif
 
               if (ind == 1) then
-                if (ssh_standalone) print*,ic_name,'with index',cstindex(s),' is unchanged and evolve hourly.'
+                if (ssh_standalone) write(*,*) ic_name,'with index',cst_gas_index(s), & 
+                    ' Concentrations are given at each time step.'
+                if (ssh_logger) write(logfile,*) ic_name,'with index',cst_gas_index(s), &
+                    ' Concentrations are given at each time step.'
+
                 exit
               endif
            enddo
 
            if (ind .eq. 0) then
-              if (ssh_standalone) write(*,*) "Error: wrong species name is given ",&
-                cstindex_file, trim(ic_name)
-              if (ssh_logger) write(logfile,*) "Error: wrong species name is given ",&
-                cstindex_file, trim(ic_name)
+              if (ssh_standalone) write(*,*) "Error: wrong species name is given in ",&
+                trim(cst_gas_file),', species ', trim(ic_name)
+              if (ssh_logger) write(logfile,*) "Error: wrong species name is given in ",&
+                trim(cst_gas_file),', species ', trim(ic_name)
               stop
            endif
         enddo
         close(34)
     else
-        print*,'No input cst gas file.'
-        allocate(cstindex(ncst_chem)) ! index of unchanged species
-        allocate(cinorg(ncst_chem,24))
+        !print*,'No input cst gas file.'
+        allocate(cst_gas_index(ncst_gas)) ! index of unchanged species
+        allocate(cst_gas(ncst_gas,0))
     endif
 
     ! species that keep conc. constants in the simulation
-    if (RO2index_file.ne."---" .and. iRO2 .ne. 0) then
-        open(unit = 34, file = RO2index_file, status = "old")
+    if (RO2_list_file.ne."---") then
+
+        if (ssh_standalone) write(*,*) 'RO2 list file : ', trim(RO2_list_file)," tag_RO2 = ",tag_RO2
+        if (ssh_logger) write(logfile,*) 'RO2 list file : ', trim(RO2_list_file)," tag_RO2 = ",tag_RO2
+
+        open(unit = 34, file = RO2_list_file, status = "old")
         count = 0 
         ierr = 0
         nline = 0
@@ -2846,8 +3017,9 @@ contains
            end if
         end do
 
-        nRO2_chem =count
+        nRO2_chem = count
         allocate(RO2index(nRO2_chem)) ! index of RO2
+        RO2index = 0
 
         rewind 34
         do s = 1, nline
@@ -2864,53 +3036,63 @@ contains
               if (ind == 1) exit
            enddo
            if (ind .eq. 0) then
-              if (ssh_standalone) write(*,*) "Error: wrong species name is given ",&
-                RO2index_file, trim(ic_name)
-              if (ssh_logger) write(logfile,*) "Error: wrong species name is given ",&
-                RO2index_file, trim(ic_name)
+              if (ssh_standalone) write(*,*) "Error: wrong species name is given in ",&
+                trim(RO2_list_file)," ",trim(ic_name)
+              if (ssh_logger) write(logfile,*) "Error: wrong species name is given in ",&
+                trim(RO2_list_file)," ", trim(ic_name)
               stop
            endif
         enddo
         close(34)
-    else
-        print*,'No input RO2 list.'
-        allocate(RO2index(nRO2_chem)) ! index of RO2
+
+    else if (tag_RO2 .eq. 1 .or. tag_RO2 .eq. 3) then
+        !print*,'No input RO2 list.'
+        if (ssh_standalone) write(*,*) "Error: RO2 list info is needed but not given."
+        if (ssh_standalone) write(*,*) "Please check RO2_list_file in the namelist. tag_RO2 = ",&
+            tag_RO2, " ",trim(RO2_list_file)
+        if (ssh_logger) write(logfile,*) "Error: RO2 list info is needed but not given."
+        if (ssh_logger) write(logfile,*) "Please check RO2_list_file in the namelist. tag_RO2 = ",&
+            tag_RO2, " ",trim(RO2_list_file)
+        stop
     endif
 
-    !!! read ref and pre concentrations
+    ! to pass it to ssh_chem()
+    if (.not.allocated(RO2index)) allocate(RO2index(nRO2_chem)) ! index of RO2
+
+    ! update nout_total
+    nout_total = nout_soa + nRO2_group
+    allocate(total_soa(nout_total,nt))
+    total_soa = 0.d0
+
+    !!! read ref and pre concentrations. Need to be after RO2 list to update nout_total
     if (ref_soa_conc_file.ne."---") then
+        if (ivoc.gt.0) then
+            ref_soa_conc_file = trim(ref_soa_conc_file)//'.'//trim(ivocstr)
+            !print*,'ref file: ',trim(ref_soa_conc_file)
+        endif
         open(unit = 35, file = ref_soa_conc_file, status = "old")
         
         ! check number of values in the list
-        count = 0 
+        count = 1 
         ierr = 0
-        nline = 0
-        do while(ierr .eq. 0)
-           read(35, *, iostat=ierr) tmp_name
-           if (ierr == 0) then
-              if (trim(tmp_name) .eq. "#") then
-                 nline = nline + 1
-              else
-                 count = count + 1
-              end if
-           end if
-        end do
+        ! read ref conc
+        allocate(ref_soa(nout_total,nt)) ! save ref soa conc
 
-        ! check if count number == nt
-        if (nt.ne.count-1) then
-            write(*,*) "Error: not the same number", nt, count,ref_soa_conc_file
+        read(35,*, iostat=ierr) ! read the init conc
+        do while(ierr.eq.0.and.count.le.nt) 
+           read(35,*, iostat=ierr) (ref_soa(k,count), k=1, nout_total)
+           if (ierr == 0) count = count + 1
+        enddo
+        
+        if (ierr.ne.0) then
+            write(*,*) "Error: can not read the ref conc.", count, ref_soa_conc_file
             stop
         endif
-        
-        ! read ref conc
-        allocate(ref_soa(nt)) ! save ref soa conc
-        rewind 35
-        do s = 1, nline+1 ! not read the initial conc
-           read(35, *) ! read comment lines.
-        end do
-        do s= 1, nt
-           read(35,*) ref_soa(s)
-        enddo
+        ! check if count number == nt
+        if (nt.ne.count-1) then
+            write(*,*) "Error: not the same number in ref conc.", nt, count,ref_soa_conc_file
+            stop
+        endif
 
         ierr_ref = .true.
         
@@ -2926,39 +3108,35 @@ contains
     endif
            
     if (pre_soa_conc_file.ne."---") then
+
+        if (ivoc.gt.0) then
+            pre_soa_conc_file = trim(pre_soa_conc_file)//'.'//trim(ivocstr)
+            !print*,'pre file: ',trim(pre_soa_conc_file)
+        endif
+
         open(unit = 35, file = pre_soa_conc_file, status = "old")
         
         ! check number of values in the list
-        count = 0 
+        count = 1 
         ierr = 0
-        nline = 0
-        do while(ierr .eq. 0)
-           read(35, *, iostat=ierr) tmp_name
-           if (ierr == 0) then
-              if (trim(tmp_name) .eq. "#") then
-                 nline = nline + 1
-              else
-                 count = count + 1
-              end if
-           end if
-        end do
+        ! read ref conc
+        allocate(pre_soa(nout_total,nt)) ! save ref soa conc
+        read(35,*, iostat=ierr) ! read the init conc
+        do while(ierr.eq.0.and.count.le.nt) 
+           read(35,*, iostat=ierr) (pre_soa(k,count), k=1, nout_total)
+           if (ierr == 0) count = count + 1
+        enddo
 
-        ! check if count number == nt
-        if (nt.ne.count-1) then
-            write(*,*) "Error: not the same number in previous conc.", nt, count,pre_soa_conc_file
+        if (ierr.ne.0) then
+            write(*,*) "Error: can not read the pre conc.", count, pre_soa_conc_file
             stop
         endif
-        
-        ! read ref conc
-        allocate(pre_soa(nt)) ! save ref soa conc
-        rewind 35
-        do s = 1, nline+1
-           read(35, *) ! read comment lines.
-        end do
-        do s= 1, nt
-           read(35,*) pre_soa(s)
-        enddo
-        
+        ! check if count number == nt
+        if (nt.ne.count-1) then
+            write(*,*) "Error: not the same number in pre conc.", nt, count,pre_soa_conc_file
+            stop
+        endif
+
         ierr_pre = .true.
         
         ! print info
@@ -2971,12 +3149,14 @@ contains
         if (ssh_logger) write(logfile,*) "ierr_pre = 0. Not read pre soa concentration."
     endif
     
-! genoa
+! zhizhao
 
     if (ssh_standalone) write(*,*) "=========================finish read inputs file======================"
     if (ssh_logger) write(logfile,*) "=========================finish read inputs file======================"
 
     if (allocated(tmp_aero))  deallocate(tmp_aero)
+    if (allocated(tmp_read))  deallocate(tmp_read)
+    if (allocated(tmp_fgls))  deallocate(tmp_fgls)
   end subroutine ssh_read_inputs
 
 
@@ -2990,15 +3170,15 @@ contains
 
     integer :: ierr = 0
 
-    !genoa
+    ! genoa chemistry
     if (allocated(RO2index)) deallocate(RO2index)
-    if (allocated(cstindex)) deallocate(cstindex)
+    if (allocated(RO2groups)) deallocate(RO2groups)
+    if (allocated(cst_gas_index)) deallocate(cst_gas_index)
     if (allocated(cst_aero_index)) deallocate(cst_aero_index)
-    if (allocated(cinorg)) deallocate(cinorg)
+    if (allocated(cst_gas)) deallocate(cst_gas)
     if (allocated(cst_aero)) deallocate(cst_aero)
     if (allocated(ref_soa)) deallocate(ref_soa)
     if (allocated(pre_soa)) deallocate(pre_soa)
-    if (allocated(RO2_pool)) deallocate(RO2_pool)
     if (allocated(total_soa)) deallocate(total_soa)
     if (allocated(output_aero)) deallocate(output_aero)
     if (allocated(output_gas)) deallocate(output_gas)
@@ -3035,8 +3215,8 @@ contains
     if (allocated(molecular_diameter))  deallocate(molecular_diameter, stat=ierr)
     if (allocated(surface_tension))  deallocate(surface_tension, stat=ierr)
     if (allocated(accomodation_coefficient))  deallocate(accomodation_coefficient, stat=ierr)
+    if (allocated(partitioning)) deallocate(partitioning, stat=ierr)
     if (allocated(smiles)) deallocate(smiles, stat=ierr)
-    if (allocated(henryslaw))  deallocate(henryslaw, stat=ierr)
     if (allocated(saturation_vapor_pressure))  deallocate(saturation_vapor_pressure, stat=ierr)
     if (allocated(enthalpy_vaporization))  deallocate(enthalpy_vaporization, stat=ierr)    
     if (allocated(mass_density))  deallocate(mass_density, stat=ierr)
@@ -3142,6 +3322,8 @@ contains
     if (allocated(pressure_array)) deallocate(pressure_array)
     if (allocated(humidity_array)) deallocate(humidity_array)
     if (allocated(relative_humidity_array)) deallocate(relative_humidity_array)
+    
+    
 
 
   END subroutine ssh_free_allocated_memory

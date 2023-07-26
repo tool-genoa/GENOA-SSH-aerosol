@@ -1,17 +1,28 @@
-# -*- coding: utf-8 -*-
-#================================================================================
+# ================================================================================
 #
-#     GENOA v1.0: the GENerator of reduced Organic Aerosol mechanism
+#   GENOA v2.0: the GENerator of reduced Organic Aerosol mechanism
 #
-#     Copyright (C) 2022 CEREA (ENPC) - INERIS.
-#     GENOA is distributed under GPL v3.
+#    Copyright (C) 2023 CEREA (ENPC) - INERIS.
+#    GENOA is distributed under GPL v3.
 #
-#================================================================================
+# ================================================================================
+#
+#  Functions.py is a module that contains commonly used functions intended
+#
+#    for reuse across multiple scripts within GENOA.
+#
+# ================================================================================
 
 import os
+import re
+import csv
+import ast
+import math
 import shutil
 import numpy as np
+
 from datetime import datetime, date
+from itertools import permutations, combinations
 
 from Parameters import lats, lons
 
@@ -23,18 +34,20 @@ except:
 
 # operations on numbers
 def isint(value):
-	try:
-		int(value)
-		return True
-	except ValueError:
-		return False
+    """check if a string is an integer."""
+    try:
+        int(value)
+        return True
+    except ValueError:
+        return False
 
 def isfloat(value):
-	try:
-		float(value)
-		return True
-	except ValueError:
-		return False
+    """check if a string is a float"""
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
 
 def isFitScale(t1,t2,val):
     t1 = float(t1)
@@ -47,6 +60,14 @@ def isFitScale(t1,t2,val):
         else: return False
     if t1/t2 <= val and t1/t2 >= (1./val) : return True
     else: return False
+
+def round_up(n, decimals=0):
+    multiplier = 10 ** decimals
+    return math.ceil(n * multiplier) / multiplier
+
+def round_down(n, decimals=0):
+    multiplier = 10 ** decimals
+    return math.floor(n * multiplier) / multiplier
 
 # operations on list elements
 def multiplyList(myList) :       
@@ -77,6 +98,34 @@ def takeSecond(elem):
     """return the second element"""
     return elem[1]
 
+def count_cut(num):
+    """return a list of [1,num], [2,num], .... [num, num] if num >= 2"""
+    if num >=2 : return [[i+1,num] for i in range(num)]
+    else: return [None]
+
+def combinations_number(inval,num0=0):
+    """return the number of possibility of combinations."""
+    
+    if not isinstance(inval,list): 
+        if isinstance(inval,int): inval=list(range(inval))
+        else: raise ValueError('input should be integer or list.',inval)
+    n = 0 # init num
+    for i in range(num0,len(inval)):
+        n += len(list(combinations(inval,i+1)))
+    return n
+
+def combinations_index(inval,num0=0):
+    """return the index of all combination possibilities of a list with the input number"""
+
+    if not isinstance(inval,list): 
+        if isinstance(inval,int): inval=list(range(inval))
+        else: raise ValueError('input must be integer or list.',inval)
+    val = []
+    for i in range(num0,len(inval)):
+        for j in list(combinations(inval,i+1)):
+            val.append([k for k in j])
+    return val
+
 def compare(s, t):
     """ return True if two lists have same elements (can be unsorted) """
     return sorted(s) == sorted(t)
@@ -97,18 +146,22 @@ def trim_items(sps,items):
     return list(set(sps)-set(items))
 
 def array_to_ratio(a_list):
-    tmp = sum(a_list)
-    if tmp == 0.0: tmp1 = [1.0/len(a_list)]*len(a_list)
+    """output the ratios of input array"""
+    n = len(a_list)
+    if n == 1: return [1.0]
+    elif n == 0: return []
     else:
-        tmp1 = []
-        for i in a_list: tmp1.append(i/tmp)
-    if not sum(tmp1) == 1.0: tmp1[-1] = 1.0 - sum(tmp1[:-1])
-    return tmp1
+        tmp = sum(a_list)
+        if tmp == 0.0: tmp1 = [1.0/n]*n
+        else:
+            tmp1 = [i/tmp for i in a_list]
+        if not sum(tmp1) == 1.0: tmp1[-1] = 1.0 - sum(tmp1[:-1])
+        return tmp1
 
 # operations on time
 def SecondToDate(val, Type = '%d-%Hh'): #,Type="%B %d, %I:%M"):
     #return datetime.fromtimestamp(val).strftime(Type)
-    return str(int(val // 3600.))
+    return str(int(val / 3600.))
 
 # operations on files/folders
 def is_same_file(file1, file2):
@@ -132,8 +185,9 @@ def create_folder(path, del_exist = False):
        clean up all files/sub-directories if it exists."""
     if os.path.exists(path):
         if del_exist: shutil.rmtree(path, ignore_errors=True)
+        else: return False # no need to create
     os.makedirs(path, exist_ok=True)
-    return True
+    return True # create once
 
 def move_results(path_old, path_new, items = []):
     """remove the results from the old path to the new path"""
@@ -214,16 +268,12 @@ def get_info(pathorrea, IDchemorsp, Type = 'read'):
         tmp = pathorrea+IDchemorsp+'/'+IDchemorsp
         with open (tmp+'.species') as f:
             #print('Number of gas species: ', int(f.read().splitlines()[2].split(' ')[0])-17)
-            gas = int(f.read().splitlines()[2].split(' ')[0])-17
+            gas = int(f.read().splitlines()[2].split(' ')[0])-18
         with open (tmp+'.aer.vec') as f:
             #print('Number of aerosol species: ', len(f.read().splitlines())-11)
             aer = len(f.read().splitlines())-11
         with open (tmp+'.reactions') as f:
-            n = 0
-            for i in f.read().splitlines()[-10:]:
-                if '====' in i: n = float(i.split('='*25)[1])
-            #print('Number of reaction: ', n)
-            rea = n
+            rea = f.read().count('KINETIC') - f.read().count('%KINEITC')
         if 0:
             with open (tmp+'.RO2') as f:
                 print('Number of RO2: ', len(f.read().splitlines())-1)
@@ -251,3 +301,111 @@ def get_info(pathorrea, IDchemorsp, Type = 'read'):
             if i.status: rea += 1
 
     return rea, gas, aer
+
+def get_negative_str(val):
+    "get the negative string"
+    if val[0] == '-': return val[1:]
+    else: return '-' + val
+    
+def convert_number_format_in_string(string):
+    """reformat number in a string in format aEb to a$^{b}$ used in latex"""
+    
+    pattern = r"(\d+(?:\.\d+)?)E([+-]?\d+)"
+    matches = re.findall(pattern, string)
+    converted_string = string
+    for match in matches:
+        a = float(match[0])
+        a_str = "{:.{}f}".format(a, len(match[0].split(".")[1].rstrip("0")))
+        a_str = a_str.rstrip("0") if "." in a_str else a_str
+        a = float(a_str)
+        b = int(match[1])
+        converted_number = "{:.1f}$\\times 10^{:}$".format(a,"{"+str(b)+"}")
+        converted_string = converted_string.replace(match[0] + 'E' + match[1], converted_number)
+    return converted_string
+
+def reformat_number_in_string(number_str):
+    """reformat number in a string separated by &
+       aEb to a$^{b}$ used in latex"""
+    
+    numbers = number_str.split('&')
+
+    for i, num in enumerate(numbers):
+        try:
+            num = float(num)
+            if 0.01 < num < 1000:
+                a_str = "{:.{}f}".format(num, len(str(num).split(".")[1].rstrip("0")))
+                numbers[i] = a_str.rstrip("0") if "." in a_str else a_str
+            else:
+                numbers[i] = '{:.2e}'.format(num).replace('e', '$\\times 10^{').replace('+', '') + '}$'
+        except ValueError:
+            pass
+
+    return '&'.join(numbers)
+
+# functions to read input parameters
+def read_parameters_from_csv(filename, delimiter=','):
+
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"File '{filename}' not found. Please check the file path.")
+
+    input_parameters = {}
+    temp_dict = {}
+    param_lengths = None
+
+    with open(filename, 'r') as csvfile:
+        csvreader = csv.reader(csvfile, delimiter=delimiter)
+        next(csvreader)  # Assuming the first row is the header row
+        for row in csvreader:
+            if not row[0].strip().startswith("#"):  # Skip lines starting with #
+                param_name = row[0] # first column (parameter names)
+                if not param_name: continue
+                param_values = [value.strip() for value in row[1:] if value != '']
+                
+                # check name
+                if param_name in list(input_parameters.keys()):
+                    raise NameError('Parameter given twice in the csv table',param_name,filename)
+
+                # Check if the lengths of input lists are consistent
+                if param_lengths is None:
+                    param_lengths = len(param_values)
+                    
+                elif len(param_values) != param_lengths:
+                    raise ValueError(f"The length of input lists for parameter '{param_name}' is inconsistent.", param_lengths, len(param_values))
+                
+                temp_dict[param_name] = param_values
+
+        for param_name, param_values in temp_dict.items():
+            processed_values = []
+            for value_str in param_values:
+                try:
+                    value = ast.literal_eval(value_str)
+                    if isinstance(value, int):
+                        processed_value = int(value)
+                    elif isinstance(value, float):
+                        processed_value = float(value)
+                    elif isinstance(value, str):
+                        if value in temp_dict: 
+                            val,n = value,1
+                        else:
+                            if '/' in value: spr = '/'
+                            elif '*' in value: spr = '*'
+
+                            val = value.split(spr)[0].replace(' ','')
+                            n = float(value.split(spr)[1])
+
+                        if val in temp_dict:
+                            # If the value is a string reference to another parameter, calculate the result
+                            ref_param_values = temp_dict[value][len(processed_values)]
+                            processed_value = float(ref_param_values) / float(value.split('/')[1])
+                    else:
+                        processed_value = value_str
+
+                except (SyntaxError, ValueError):
+                    processed_value = value_str
+                    
+                processed_values.append(processed_value)
+
+            input_parameters[param_name] = processed_values
+
+    return input_parameters
+

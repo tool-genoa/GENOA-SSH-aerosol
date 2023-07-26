@@ -51,7 +51,9 @@ fi
 #
 
 tmp_files="inSPACK perm.dat ${SPECIES}_preprocessed non_zero.dat non_zero_90.dat"
-output_file="LU_decompose.f90 LU_solve.f90 species.spack.dat dratedc.f90 fexchem.f90 fexloss.f90 fexprod.f90 jacdchemdc.f90 kinetic.f90 rates.f90 dimensions.f90 non_zero.dat"
+#output_file="LU_decompose.f90 LU_solve.f90 species.spack.dat dratedc.f90 fexchem.f90 fexloss.f90 fexprod.f90 jacdchemdc.f90 kinetic.f90 rates.f90 dimensions.f90 non_zero.dat"
+output_file="species.spack.dat dratedc.f90 fexchem.f90 fexloss.f90 fexprod.f90 jacdchemdc.f90 kinetic.f90 rates.f90 dimensions.f90 non_zero.dat"
+
 
 # Automatically delete temporary files on exit.
 function on_exit {
@@ -75,8 +77,9 @@ rm -f $output_file
 $script_dir/spack_generator spack_config ${SPECIES}_preprocessed $REACT
 
 # Those unused files don't even compile:
+# use in two-step time numerical solver
 # rm -f fexloss.f90 fexprod.f90
-rm -f LU_decompose.f90 LU_solve.f90 fexchem.f90 jacdchemdc.f90
+rm -f fexchem.f90 jacdchemdc.f90
 
 # Replaces strings "E+" by "D+" and "E-" by "D-" in the output to get double precision.
 sed -i 's/E\([+-]\)/D\1/g' *.f90
@@ -84,7 +87,7 @@ sed -i 's/E\([+-]\)/D\1/g' *.f90
 #echo "======= 2 - LU decomposition and solver(s)..."
 
 # Reads the Spack config (to get the function suffix).
-#. spack_config
+. spack_config
 
 #headers_dir=$script_dir/headers
 #$script_dir/LU_generator ${SPECIES}_preprocessed non_zero.dat $headers_dir/header_license.txt $headers_dir/header_decompose.txt $headers_dir/header_solve.txt $headers_dir/header_solve_tr.txt $function_suffix

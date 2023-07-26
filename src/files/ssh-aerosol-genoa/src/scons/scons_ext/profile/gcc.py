@@ -74,7 +74,8 @@ def fast(utils):
     won't work on computers with older CPUs. Newer CPUs should be backward
     compatible.
     """
-    p = fast_portable(utils)
+    p = _warning(utils)
+    p.flag_compiler += " -Ofast" #"-O3 -ffast-math -fno-protect-parens"
 
     # p.flag_compiler += " -march=native"
     # using -march=native leads to a more CPU time in polair3d simulations.
@@ -139,9 +140,9 @@ def debug(utils):
 
         # Polyphemus related macros.
         "TALOS_DEBUG",
-        "SELDONDATA_DEBUG_LEVEL_4",
-        "SELDON_DEBUG_LEVEL_4",
-        "VERDANDI_DEBUG_LEVEL_4",
+        "SELDONDATA_DEBUG_LEVEL_2",
+        "SELDON_DEBUG_LEVEL_2",
+        "VERDANDI_DEBUG_LEVEL_2",
         "SELDON_WITH_ABORT",
         "VERDANDI_WITH_ABORT",
         "OPS_WITH_ABORT"

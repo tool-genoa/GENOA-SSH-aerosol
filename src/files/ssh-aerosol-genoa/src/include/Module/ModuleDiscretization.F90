@@ -175,13 +175,6 @@ contains
        enddo
     enddo
 
-    ! genoa conversion_factor for airM
-    if (iSumM .ne. 0) then
-       !print*,'airm has no conversion factor. tag_SumM = ',tag_SumM
-       conversionfactor(iSumM) = 1.0
-    endif
-    ! genoa
-
     ! initialise fraction discretization 
 
     if(.not.allocated(discretization_mass)) allocate(discretization_mass(N_sizebin+1))

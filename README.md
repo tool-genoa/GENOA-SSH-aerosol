@@ -1,8 +1,10 @@
-# The GENerator of Reduced Organic Aerosol Mechanisms (GENOA)
+# The GENerator of Reduced Organic Aerosol Mechanisms (GENOA v2.0)
 
-This is an algorithm that generates semi-explicit chemical mechanisms from explict mechanism (e.g., the Master Chemical Mechanism) focusing on SOA formation.
+GENOA v2.0 is an algorithm that generates semi-explicit chemical mechanisms from explicit mechanisms, with a specific focus on SOA (Secondary Organic Aerosol) formation.
 
-- Last update: 2022/04/25
+Compared to GENOA v1.0, GENOA v2.0 adopts a parallel reduction framework to identify the most optimal reductions from competitive candidates, and can reduce chemical mechanisms from multiple aerosol precursors.
+
+- Last update: 2023/07/25
 
  
 Requirements:
@@ -14,17 +16,30 @@ Requirements:
 2.	[numpy 1.11.0 or later](https://numpy.org/)
 
 
-3.	all the requirements to run [ssh-aerosol](https://sshaerosol.wordpress.com/), including the construction tool [SCONS](http://www.scons.org/wiki/SconsTutorial1)
+3.	All the requirements to run [ssh-aerosol](https://sshaerosol.wordpress.com/), including the construction tool [SCONS](http://www.scons.org/wiki/SconsTutorial1)
 
-4. [matplotlib 1.5.1 or later](https://matplotlib.org/) (Optional for postprocessing)
+4.	[Open Babel 3.0.1 or later](http://openbabel.org/) (Optional: used for computing aerosol properties from SMILES structures)
 
-5. [basemap 1.2.1 or later](https://matplotlib.org/basemap/) (Optional for postprocessing)
+5.	[UManSysProp](https://github.com/waveform-computing/umansysprop) (Optional: used for computing aerosol properties from SMILES structures. Requires an update to be used with Python 3)
+
+6.	[matplotlib 1.5.1 or later](https://matplotlib.org/) (Optional: used for postprocessing)
+
+7.	[basemap 1.2.1 or later](https://matplotlib.org/basemap/) (Optional: used for postprocessing)
+ 
 
 
+Learning more about the GENOA algorithms:
 --------------
 
-See the GENOA_v1.0_Manual to learn more about GENOA.
+GENOA v1.0
+---
 
---------------
+Refer to the GENOA_v1.0_Manual and [wang et al.,2022](https://doi.org/10.5194/gmd-15-8957-2022) to learn more about GENOA v1.0.
 
-[![DOI](https://zenodo.org/badge/481260565.svg)](https://zenodo.org/badge/latestdoi/481260565)
+[![GENOAv1.0 code archive](https://zenodo.org/badge/481260565.svg)](https://zenodo.org/badge/latestdoi/481260565)
+
+GENOA v2.0
+---
+
+The GENOA_v2.0_Manual will be made available soon.
+

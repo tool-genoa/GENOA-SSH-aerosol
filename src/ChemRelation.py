@@ -1,14 +1,20 @@
-# -*- coding: utf-8 -*-
-#================================================================================
+# ================================================================================
 #
-#     GENOA v1.0: the GENerator of reduced Organic Aerosol mechanism
+#   GENOA v2.0: the GENerator of reduced Organic Aerosol mechanism
 #
-#     Copyright (C) 2022 CEREA (ENPC) - INERIS.
-#     GENOA is distributed under GPL v3.
+#    Copyright (C) 2023 CEREA (ENPC) - INERIS.
+#    GENOA is distributed under GPL v3.
 #
-#================================================================================
+# ================================================================================
+#
+#  ChemRelation.py analyzes the relationships among reactions and species
+#
+#   within the same reaction tree (e.g., parent-child relationships). These 
+#
+#   relationships helps to define candidate reductions.
+#
+# ================================================================================
 
-# this python script contains functions that processes a list of reactions and returns species properties related to the reaction list
 
 import numpy as np
 
@@ -231,8 +237,11 @@ def reversed_tree(reactions):
         children species -> all reactants before
         return lists of children and parent species"""
 
-    parents=[] + primaryVOCs
-    children=[[]]
+    #parents=[i for i in primaryVOCs]
+    parents = get_species_from_reactions(reactions)
+    #children=[[] for i in primaryVOCs]
+    children=[[] for i in parents]
+
     # traverse all reactions
     for i in reactions:
         # check status
@@ -244,10 +253,12 @@ def reversed_tree(reactions):
                 parents.append(j)
                 children.append([])
                 ind = -1
-            else: ind = parents.index(j)
+            else: 
+                ind = parents.index(j)
             # add i.reactants
             for k in i.reactants:
-                if k not in NokeepSp and k not in children[ind]: children[ind].append(k)
+                if k not in NokeepSp and k not in children[ind]:
+                    children[ind].append(k)
 
     # traverse all species
     tag=1
@@ -301,7 +312,7 @@ def lifetime(reactions, concs):
                         if k[1] in concs.keys():
                             tmp=k[0]*concs[k[1]]
                         else:
-                            tmp=k[0]*concs['RO2'] # RO2 + RO2 reactions dimer
+                            tmp=k[0]*concs['RO2pool'] # RO2 + RO2 reactions dimer
                             #raise NameError('lifetime: NokeepSp species conc. not given, '+k[1])
                     subtau *= tmp # [conc]*k
                 tauD+=subtau # sum([conc]*k)
@@ -311,21 +322,21 @@ def lifetime(reactions, concs):
     #print('lifetime is computed for {:d} species.'.format(len(speciesName)))
     return speciesName,lftime
 
-def generation(reactions, Type = None):
+def generation(reactions, Type = None, primaryVOCs = primaryVOCs):
     """return species and their number of generation depending on the given reaction list"""
 
     pros = destructions(reactions,Type='pro')
     reas = destructions(reactions,Type='rea')
     gens = {}
-    for i in primaryVOCs: gens[i] = 1
+    for i in primaryVOCs: gens[i] = [1]
     used = []
 
     while len(list(gens.keys())) < len(pros[0]) or len(used) == len(pros[0]):
         for i in list(gens.keys()):
             if i not in pros[0]:
                 if i in primaryVOCs:
-                    print(i, 'primary VOC is not in pros list')
-                    raise AttributeError('CR generation: Check reaction list.')
+                    print(i, 'primary VOC is not in pros list',primaryVOCs)
+                    raise AttributeError('CR generation: Check reaction list.',i,primaryVOCs)
                 else: print(i) 
                 continue
             n = pros[0].index(i) # index

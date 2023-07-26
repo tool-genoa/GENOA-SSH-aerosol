@@ -1,12 +1,17 @@
-# -*- coding: utf-8 -*-
-#================================================================================
+# ================================================================================
 #
-#     GENOA v1.0: the GENerator of reduced Organic Aerosol mechanism
+#   GENOA v2.0: the GENerator of reduced Organic Aerosol mechanism
 #
-#     Copyright (C) 2022 CEREA (ENPC) - INERIS.
-#     GENOA is distributed under GPL v3.
+#    Copyright (C) 2023 CEREA (ENPC) - INERIS.
+#    GENOA is distributed under GPL v3.
 #
-#================================================================================
+# ================================================================================
+#
+#  SSHSetUp.py sets up the aerosol box model SSH-aerosol that simulate aerosol
+#
+#   concentrations for reduction evaluation within the GENOA program.
+#
+# ================================================================================
 
 import os
 import time
@@ -15,7 +20,8 @@ import numpy as np
 from datetime import datetime
 from multiprocessing import Pool
 
-from Parameters import namelist_pre, outputs, pathSSH_sav
+from Parameters import namelist_pre, outputs, \
+                       pathSSH_sav, ncpu, primaryVOCs
 from Functions import is_same_file,replace_in_file, \
                       get_locations, create_folder, \
                       move_results
@@ -27,13 +33,13 @@ ssh_items = ['initial_time =',
               'init_gas_conc_file =',
               'init_aero_conc_mass_file =',
               'output_directory =',
-              'cstindex_file =',
+              'cst_gas_file =',
               'ref_soa_conc_file =', # for error analysis
               'pre_soa_conc_file = ',
               'latitude =',
               'longitude =',
               'meteo_file =',
-              'aero_cst_file =']
+              'cst_aero_file =']
 
 def get_ssh_index_and_file(namelist_text, items = ssh_items):
     n = len(items)
@@ -57,7 +63,7 @@ def get_ssh_index_and_file(namelist_text, items = ssh_items):
 def run_one_sim(ipath,iloc,itimes, pathInit, rPath,
                 sshf, ssh_inds,
                 iref_file ='---', ipre_file='---',
-                ioutType = 1, isavorg = None):
+                ioutType = 1, isavorg = None, ipvoc=0):
 
     if len(iloc) == 3: ilc = get_locations([iloc])[0]
     else: ilc = iloc
@@ -79,37 +85,59 @@ def run_one_sim(ipath,iloc,itimes, pathInit, rPath,
               '"{:s}",\n'.format('{:s}/{:s}/aero.cst'.format(pathInit,rPath))]
 
     # clean & create directory to save results
-    create_folder(ipath,del_exist = True)
+    if ipvoc: ipath1 = ipath + '.{:d}'.format(ipvoc)
+    else: ipath1 = ipath
+    
+    create_folder(ipath1,del_exist = True)
 
     # write new namelist
-    inamelist = '{:s}/namelist.ssh'.format(ipath)
+    inamelist = '{:s}/namelist.ssh'.format(ipath1)
     for i,j in enumerate(ssh_inds):
         sshf[j] = ssh_items[i] + ssh_vals[i]
     with open (inamelist, 'w+') as f:
         for i in sshf: f.write(i)
 
     # launch simulations
-    os.system('./ssh-aerosol {:s} 1> {:s}/toto'.format(inamelist, ipath))
+    toto = '{:s}/toto'.format(ipath1)
+    if ipvoc: 
+        os.system('./ssh-aerosol {:s} {:d} 1>{:s}'.format(inamelist, ipvoc, toto))
+    else:
+        os.system('./ssh-aerosol {:s} 1>{:s}'.format(inamelist, toto))
 
     # copy organic concs. if need
     if isavorg: 
         os.makedirs(isavorg, exist_ok=True)
-        shutil.copy('{:s}/aero/Organics_1.txt'.format(ipath),
-                    '{:s}/{:d}h.txt'.format(isavorg, inow))
+        if ipvoc:
+            shutil.copy('{:s}/aero/Organics_1.txt'.format(ipath1),
+                        '{:s}/SOAs_{:d}h.txt.{:d}'.format(isavorg,inow,ipvoc))
+        else:
+            shutil.copy('{:s}/aero/Organics_1.txt'.format(ipath1),
+                        '{:s}/SOAs_{:d}h.txt'.format(isavorg,inow))
+        # wgas
+        if '_wgas' in namelist_pre:
+            for s in primaryVOCs:
+                if ipvoc:
+                    shutil.copy('{:s}/gas/{:s}.txt'.format(ipath1,s),
+                                '{:s}/{:s}_{:d}h.{:d}.txt'.format(isavorg,s,inow,ipvoc))
+                else:
+                    shutil.copy('{:s}/gas/{:s}.txt'.format(ipath1,s),
+                                '{:s}/{:s}_{:d}h.txt'.format(isavorg,s,inow))
 
     # analysis errors
     errs = [None, None] # init
-    with open ('{:s}/toto'.format(ipath)) as f:
+    with open (toto) as f:
         for i in f.read().splitlines():
             if 'err_ref' in i and ':' in i: 
                 errs[0] = float(i.split(':')[1])
             elif 'err_pre' in i and ':' in i:
                 errs[1] = float(i.split(':')[1])
+            elif 'sumXk is zero' in i:
+                raise ValueError('sumXk is zero is found.',path_ssh,ind,namelist)
     return errs
 
 def run_SSH(IDchem,pathChem,pathSSH,pathResult,tail,ResultFolder,
             Ttot,DeltaT,locs,Tnow,mode,initfile,pathInit,savorg = False,
-            ref_file = None, pre_file = None, ioutType = 1):
+            ref_file = None, pre_file = None, ioutType = 1, ipvoc=0):
     """build and run ssh-aerosol simulations with given chemistry folder"""
 
     # clean and compile SSH-aerosol with the new chem
@@ -122,8 +150,10 @@ def run_SSH(IDchem,pathChem,pathSSH,pathResult,tail,ResultFolder,
     # Run simulations with settings provided in Parameters.py
     results,errs = run_SSHsimulation(tail,ResultFolder,pathSSH,
                         ssh_namelist, ssh_inds,
-                        Ttot,DeltaT,locs,Tnow,pathInit,initfile,savorg,
-                        ref_file, pre_file, ioutType)
+                        Ttot,DeltaT,locs,Tnow,pathInit,
+                        initfile,savorg,
+                        ref_file, pre_file,
+                        ioutType,ipvoc)
     if pathResult: # save results in pathResult
         path_old = '{:s}/{:s}'.format(pathSSH,ResultFolder)
         path_new = '{:s}/{:s}'.format(pathResult,ResultFolder)
@@ -144,12 +174,12 @@ def set_SSH(IDchem,pathChem,pathSSH,pathSSH_sav = pathSSH_sav, mode = 'fast_comp
     # check mode
     if 'complete' in mode:
         if not is_same_file('{:s}/ssh-aerosol.com'.format(pathSSH_sav[1]), '{:s}/src/ssh-aerosol.f90'.format(pathSSH)):
-            print('Running ssh-aerosol-genoa to the complete mode...')
+            print('Running ssh-aerosol-genoa at the complete mode...')
             shutil.copy('{:s}/ssh-aerosol.com'.format(pathSSH_sav[1]),
                         '{:s}/src/ssh-aerosol.f90'.format(pathSSH))
     elif 'fast' in mode:
         if not is_same_file('{:s}/ssh-aerosol.sim'.format(pathSSH_sav[1]), '{:s}/src/ssh-aerosol.f90'.format(pathSSH)):
-            print('Running ssh-aerosol-genoa to the fast mode...')
+            print('Running ssh-aerosol-genoa at the fast mode...')
             shutil.copy('{:s}/ssh-aerosol.sim'.format(pathSSH_sav[1]),
                         '{:s}/src/ssh-aerosol.f90'.format(pathSSH))
     else:
@@ -215,7 +245,7 @@ def get_namelist(pathSSH_sav='../', outConc = True):
             rewrite namelist file for running all simulations
     """
 
-    with open ('{:s}/src/files/{:s}'.format(pathSSH_sav,namelist_pre),'r') as f: ssh_namelist = f.readlines()
+    with open ('{:s}/src/{:s}'.format(pathSSH_sav,namelist_pre),'r') as f: ssh_namelist = f.readlines()
 
     # write setting for outputs
     if outConc: ioutType = 1
@@ -256,7 +286,7 @@ def run_SSHsimulation(tail,ResultFolder,pathSSH,
                         Ttot,DeltaT,locs,Tnow,pathInit,
                         initfile = 'storage',savorg = False,
                         ref_file = None, pre_file = None,
-                        ioutType = 1):
+                        ioutType = 1, ipvoc=0):
     """run simulations
        Ttot: an array of the simulation duration
        DeltaT: simulation time step
@@ -355,14 +385,16 @@ def run_SSHsimulation(tail,ResultFolder,pathSSH,
     os.chdir(pathSSH)
 
     pool_inputs = []
-    for i in range(n):
-        pool_inputs.append((results[i], ilocations[ilocs[i]],
+    js = [i for i in range(ipvoc+1)]
+    for j in js:
+        for i in range(n):
+            pool_inputs.append((results[i], ilocations[ilocs[i]],
                              sim_times[i], #ipath,iloc,itimes
                              pathInit, rPaths[ilocs[i]], # pathInit, rPath
                              ssh_namelist, ssh_inds, # sshf, ssh_inds
                              iref_files[i], ipre_files[i], # iref_file, ipre_file
-                             ioutType, isavorgs[ilocs[i]]))
-    with Pool() as pool:
+                             ioutType, isavorgs[ilocs[i]],j))
+    with Pool(ncpu) as pool:
         errs = pool.starmap(run_one_sim, pool_inputs)
 
     # return to the pervious path

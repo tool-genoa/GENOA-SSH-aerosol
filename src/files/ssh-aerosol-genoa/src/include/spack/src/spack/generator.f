@@ -5,7 +5,7 @@ C     Authors: Bruno Sportisse and Pierre Plion, CEREA/ENPC
 C     Date: February 2003.
 C------------------------------------------------------------------------
 C     genoa add for Complex rate coefficients in MCM v3.3.1
-      subroutine ssh_MCM1(nr,b1,b2,b3,b4,b5,b6,b7,b8)
+      subroutine ssh_WKMCM1(nr,b1,b2,b3,b4,b5,b6,b7,b8)
 C------------------------------------------------------------------------
 C
 C     -- DESCRIPTION
@@ -26,7 +26,7 @@ C
 C     Use for: KFPAN, KMT01, 02, 03, 07, 08, 09, 13, 15, 16
 C              (12 and 17 are (ka * kb * kd)/(ka + kb))
 C
-C     specific case: KMT04, KMT05, KMT06, KMT08, KMT11, KMT12, 17, KMT18
+C     specific case: KMT04, KMT05, KMT06, KMT08, KMT11, KMT12, KMT17, KMT18
 C------------------------------------------------------------------------
       include 'nficfort'
       integer nr
@@ -58,7 +58,7 @@ C
       return
       end
 C------------------------------------------------------------------------
-      subroutine ssh_MCM2(nr,b1,b2,b3,b4,b5,b6,b7,b8)
+      subroutine ssh_WKMCM2(nr,b1,b2,b3,b4,b5,b6,b7,b8)
 C------------------------------------------------------------------------
 C
 C     -- DESCRIPTION
@@ -95,7 +95,7 @@ C
       end
 C------------------------------------------------------------------------
 C     genoa add for photolysis in MCM
-      subroutine ssh_MCM3(nr,b1,b2,b3)
+      subroutine ssh_WKMCM3(nr,b1,b2,b3)
 C------------------------------------------------------------------------
 C
 C     -- DESCRIPTION
@@ -112,27 +112,7 @@ C
      &     '* dexp( -',D23.16,' * secX) ')
       return
       end
-C------------------------------------------------------------------------
-C     genoa add for general kinetic in MCM
-      subroutine ssh_MCM4(nr,b1,b2,b3,b4)
-C------------------------------------------------------------------------
-C
-C     -- DESCRIPTION
-C
-C     k(T) = (b1 * dexp(b2/T) ) ** b3 * b4 (b4 for ratio)
-C     2*(K298CH3O2*2.9E-12*dexp(500/TEMP))@0.5
-C
-C------------------------------------------------------------------------
-      include 'nficfort'
-      integer nr
-      double precision b1,b2,b3,b4
-C
-      write(nficK90,10) nr,b1,b2,b3,b4 !ka Effko
 
- 10   format('  rk(',i4,') =  (',D23.16,' * dexp(',D23.16,' &',/
-     &     '/temp)) ** ',D23.16,' * ',D23.16)
-      return
-      end
 C------------------------------------------------------------------------
       subroutine ssh_WK190(nr,k)
 C------------------------------------------------------------------------
@@ -500,30 +480,6 @@ C------------------------------------------------------------------------
          write(nficK90,16)nr
       elseif(ispebp.EQ.-7) then
          write(nficK90,17)nr
-      elseif(ispebp.EQ.-8) then !genoa KMT13
-         write(nficK90,18)nr
-      elseif(ispebp.EQ.-9) then !genoa KMT14
-         write(nficK90,19)nr
-      elseif(ispebp.EQ.-10) then !genoa add SPEC '3.8D-13*dexp(780/TEMP)*(1-1/(1+498*dexp(-1160/TEMP)))'
-         write(nficK90,20)nr
-      elseif(ispebp.EQ.-11) then !genoa add SPEC '3.8D-13*dexp(780/TEMP)*(1/(1+498*dexp(-1160/TEMP)))'
-         write(nficK90,21)nr
-      elseif(ispebp.EQ.-12) then !genoa add SPEC '1.03D-13*math.dexp(365/TEMP)*(1-7.18*dexp(-885/TEMP))'
-         write(nficK90,22)nr
-      elseif(ispebp.EQ.-13) then !genoa add SPEC '8.8D-12*dexp(-1320/TEMP) + 1.7D-14*dexp(423/TEMP)'
-         write(nficK90,23)nr
-      elseif(ispebp.EQ.-14) then !genoa add SPEC '5.00E-12*O2*3.2*(1-dexp(-550/TEMP))'
-         write(nficK90,24)nr
-
-      elseif(ispebp.EQ.-15) then !genoa add SPEC '1.03D-13*0.5*math.dexp(365/TEMP)*(1-7.18*dexp(-885/TEMP))' ! for seperate
-         write(nficK90,25)nr
-
-      ! for MT - MCM
-      elseif(ispebp.EQ.-16) then !genoa add SPEC '2.20E+10*EXP(-8174/TEMP)*EXP(1.00E+8/TEMP@3)'
-         write(nficK90,26)nr
-      elseif(ispebp.EQ.-17) then !genoa add SPEC '8.14E+9*EXP(-8591/TEMP)*EXP(1.00E+8/TEMP@3)'
-         write(nficK90,27)nr
-
       else
          write(*,*) 'ERROR: unknown specific reaction ',ispebp
          stop 1
@@ -549,44 +505,6 @@ C     YS 19/11/2008 value given by IUPAC 2005
      &     '    (1.0d0/(1.0d0+ ((log10(Effko)-0.12)/1.2)**2))')
  17   format('  rk(',i4,') = 1.8d-39 * YlH2O * YlH2O')
 C     YS 26/11/2008 value given by IUPAC 2005
-C genoa add formula for KMT13
- 18   format('  rk(',i4,') = (4.45D-41*SumM*(temp/300) &',/
-     &     '    **(-5.5d0))*(0.36d0/(1d0+(log10(1.39D-19* &',/
-     &     '    SumM*(temp/300d0)**(-5.5d0))/1.3135d0)**2d0))/ &',/
-     &     '    (2.5D-30*SumM*(temp/300d0)**(-5.5d0)+1.8D-11)')
-C genoa add formula for KMT14
- 19   format('  rk(',i4,') = (9.0D-5*dexp(-9690d0/temp)*SumM)* &',/
-     &     '    (1.1D+16d*dexp(-1056d1/temp))*10d**(dlog10(4d-1)/&',/
-     &     '    (1d0+(dlog10((9.0D-5*dexp(-9690d0/temp)*SumM)/ &',/
-     &     '    (1.1D+16*dexp(-10560d0/temp)))/1.2554d0)**2d0))/ &',/
-     &     '    (9.0D-5*dexp(-9690d0/temp) &',/
-     &     '    *SumM+1.1D+16*dexp(-10560d0/temp))')
-C genoa add formula for '3.8D-13*dexp(780/TEMP)*(1-1/(1+498*dexp(-1160/TEMP)))'
- 20   format('  rk(',i4,') = 3.8D-13*dexp(780d0/temp)* &',/
-     &     '    (1d0-1d0/(1d0+498d0*dexp(-1160/temp)))')
-C genoa add formula for '3.8D-13*dexp(780/TEMP)*(1/(1+498*dexp(-1160/TEMP)))'
- 21   format('  rk(',i4,') = 3.8D-13*dexp(780d0/TEMP)* &',/
-     &     '    (1d0/(1d0+498d0*dexp(-1160d0/TEMP)))')
-C genoa add formula for '2*1.03D-13*dexp(365/TEMP)*(1-7.18*dexp(-885/TEMP))'
- 22   format('  rk(',i4,') = 2d0*1.03D-13*dexp(365d0/TEMP)* &',/
-     &     '    (1d0-7.18d0*dexp(-885d0/TEMP))')
-C genoa add formula for '8.8D-12*dexp(-1320/TEMP) + 1.7D-14*dexp(423/TEMP)'
- 23   format('  rk(',i4,') = 8.8D-12*dexp(-1320d0/TEMP) +  &',/
-     &     '    1.7D-14*dexp(423d0/TEMP)')
-C genoa add formula for '5.00E-12*O2*3.2*(1-dexp(-550/TEMP))'
- 24   format('  rk(',i4,') = 5.00D-12*3.2d0  &',/
-     &     '    *(1d0-dexp(-550d0/TEMP))')
-C for seperate
-C genoa add formula for '2*1.03D-13*0.5*dexp(365/TEMP)*(1-7.18*dexp(-885/TEMP))'
- 25   format('  rk(',i4,') = 1.03D-13*dexp(365d0/TEMP)* &',/
-     &     '    (1d0-7.18d0*dexp(-885d0/TEMP))')
-C for Limonene species INDO
-C genoa add formula for '2.20E+10*EXP(-8174/TEMP)*EXP(1.00E+8/TEMP@3)'
- 26   format('  rk(',i4,') 2.2d10*dexp(-8174d0/TEMP)* &',/
-     &     '    dexp(1d8/TEMP**3)')
-C genoa add formula for '8.14E+9*EXP(-8591/TEMP)*EXP(1.00E+8/TEMP@3)'
- 27   format('  rk(',i4,') = 8.14d9*dexp(-8591/TEMP)* &',/
-     &     '    dexp(1d8/TEMP**3)')
       return
       end
 
@@ -603,6 +521,7 @@ C
 C     -- AUTHOR(S)
 C
 C     Youngseob KIM, 2010.
+C     Victor Lannuque, 2020.
 C
 C------------------------------------------------------------------------
       include 'nficfort'
@@ -643,17 +562,211 @@ C     YS(16/02/2009): values given by IUPAC 2006
 C     Modif (YK:201108/09)): 2.4d-17 to 2.7d-17 based on RACM2_5L version
  15   format('  rk(',i4,') = 1.44d-13 * (1.0d0 + 8.0d-1 * SumM &', /
      &     '    / 4.0d19)')
-C     YS 16/02/2009 value given by IUPAC 2006
- 16   format('  Rapk = 3.4d-30 * (300./temp)**(3.2)*SumM',/
-     &     '  Effko = Rapk/(4.77D-11*(300./temp)**1.4)',/
-     &     '  rk(',i4,')=(Rapk/(1.+Effko))*0.3** &',/
-     &     '    (1.0d0/(1.0d0+ ((log10(Effko)-0.12)/1.2)**2))')
+C     VICTOR2020: modified according to RACM2 v2013 :
+ 16   format('  Rapk = 3.43d-12 * dexp(270./temp)',/
+     &     '  Effko = (530./temp) + 4.8d-6 * Press - 1.73',/
+     &     '  rk(',i4,')= Rapk * Effko / 100.')
  17   format('  rk(',i4,') = 1.8d-39 * YlH2O * YlH2O')
- 18   format('  rk(',i4,') = 4.56d-14*(temp/300)**(3.65) &',/
-     &     '    * dexp(-427.0d0/temp)')
+C     VICTOR2020: modified according to RACM2 v2013 :
+ 18   format('  rk(',i4,') = 1.39d-13 + 3.72d-11 * dexp(-2044./temp)')
 C     YK 30/08/2010
       return
       end
+
+C------------------------------------------------------------------------
+      subroutine ssh_WSPEC_MCM (nr,ispebp)
+C------------------------------------------------------------------------
+C
+C     -- DESCRIPTION
+C
+C     Write kinetic rates case for specific reactions in MCM mechanism.
+C
+C------------------------------------------------------------------------
+C
+C     -- AUTHOR(S)
+C
+C     Zhizhao WANG, 2022
+C
+C------------------------------------------------------------------------
+      include 'nficfort'
+      integer nr,ispebp
+
+      If(ispebp.EQ.-8) then !genoa KMT13
+         write(nficK90,18)nr
+      elseif(ispebp.EQ.-9) then !genoa KMT14
+         write(nficK90,19)nr
+      elseif(ispebp.EQ.-10) then !genoa add SPEC '3.8D-13*dexp(780/TEMP)*(1-1/(1+498*dexp(-1160/TEMP)))'
+         write(nficK90,20)nr
+      elseif(ispebp.EQ.-11) then !genoa add SPEC '3.8D-13*dexp(780/TEMP)*(1/(1+498*dexp(-1160/TEMP)))'
+         write(nficK90,21)nr
+      elseif(ispebp.EQ.-12) then !genoa add SPEC '1.03D-13*math.dexp(365/TEMP)*(1-7.18*dexp(-885/TEMP))'
+         write(nficK90,22)nr
+      elseif(ispebp.EQ.-13) then !genoa add SPEC '8.8D-12*dexp(-1320/TEMP) + 1.7D-14*dexp(423/TEMP)'
+         write(nficK90,23)nr
+      elseif(ispebp.EQ.-14) then !genoa add SPEC '5.00E-12*O2*3.2*(1-dexp(-550/TEMP))'
+         write(nficK90,24)nr
+
+      elseif(ispebp.EQ.-15) then !genoa add SPEC '1.03D-13*0.5*math.dexp(365/TEMP)*(1-7.18*dexp(-885/TEMP))' ! for seperate
+         write(nficK90,25)nr
+
+      ! for MT - MCM
+      elseif(ispebp.EQ.-16) then !genoa add SPEC '2.20E+10*EXP(-8174/TEMP)*EXP(1.00E+8/TEMP@3)'
+         write(nficK90,26)nr
+      elseif(ispebp.EQ.-17) then !genoa add SPEC '8.14E+9*EXP(-8591/TEMP)*EXP(1.00E+8/TEMP@3)'
+         write(nficK90,27)nr
+      endif
+
+C genoa add formula for KMT13
+ 18   format('  rk(',i4,') = (4.45D-41*SumM*(temp/300) &',/
+     &     '    **(-5.5d0))*(0.36d0/(1d0+(log10(1.39D-19* &',/
+     &     '    SumM*(temp/300d0)**(-5.5d0))/1.3135d0)**2d0))/ &',/
+     &     '    (2.5D-30*SumM*(temp/300d0)**(-5.5d0)+1.8D-11)')
+C genoa add formula for KMT14
+ 19   format('  rk(',i4,') = (9.0D-5*dexp(-9690d0/temp)*SumM)* &',/
+     &     '    (1.1D+16d*dexp(-1056d1/temp))*10d**(dlog10(4d-1)/&',/
+     &     '    (1d0+(dlog10((9.0D-5*dexp(-9690d0/temp)*SumM)/ &',/
+     &     '    (1.1D+16*dexp(-10560d0/temp)))/1.2554d0)**2d0))/ &',/
+     &     '    (9.0D-5*dexp(-9690d0/temp) &',/
+     &     '    *SumM+1.1D+16*dexp(-10560d0/temp))')
+C genoa add formula for '3.8D-13*dexp(780/TEMP)*(1-1/(1+498*dexp(-1160/TEMP)))'
+ 20   format('  rk(',i4,') = 3.8D-13*dexp(780d0/temp)* &',/
+     &     '    (1d0-1d0/(1d0+498d0*dexp(-1160/temp)))')
+C genoa add formula for '3.8D-13*dexp(780/TEMP)*(1/(1+498*dexp(-1160/TEMP)))'
+ 21   format('  rk(',i4,') = 3.8D-13*dexp(780d0/TEMP)* &',/
+     &     '    (1d0/(1d0+498d0*dexp(-1160d0/TEMP)))')
+C genoa add formula for '2*1.03D-13*dexp(365/TEMP)*(1-7.18*dexp(-885/TEMP))'
+ 22   format('  rk(',i4,') = 2d0*1.03D-13*dexp(365d0/TEMP)* &',/
+     &     '    (1d0-7.18d0*dexp(-885d0/TEMP))')
+C genoa add formula for '8.8D-12*dexp(-1320/TEMP) + 1.7D-14*dexp(423/TEMP)'
+ 23   format('  rk(',i4,') = 8.8D-12*dexp(-1320d0/TEMP) +  &',/
+     &     '    1.7D-14*dexp(423d0/TEMP)')
+C genoa add formula for '5.00E-12*O2*3.2*(1-dexp(-550/TEMP))'
+ 24   format('  rk(',i4,') = 5.00D-12*3.2d0  &',/
+     &     '    *(1d0-dexp(-550d0/TEMP))')
+C for seperate
+C genoa add formula for '2*1.03D-13*0.5*dexp(365/TEMP)*(1-7.18*dexp(-885/TEMP))'
+ 25   format('  rk(',i4,') = 1.03D-13*dexp(365d0/TEMP)* &',/
+     &     '    (1d0-7.18d0*dexp(-885d0/TEMP))')
+C for Limonene species INDO
+C genoa add formula for '2.20E+10*EXP(-8174/TEMP)*EXP(1.00E+8/TEMP@3)'
+ 26   format('  rk(',i4,') =  2.2d10*dexp(-8174d0/TEMP)* &',/
+     &     '    dexp(1d8/TEMP**3)')
+C genoa add formula for '8.14E+9*EXP(-8591/TEMP)*EXP(1.00E+8/TEMP@3)'
+ 27   format('  rk(',i4,') = 8.14d9*dexp(-8591/TEMP)* &',/
+     &     '    dexp(1d8/TEMP**3)')
+
+      return
+      end
+C      
+C      
+C------------------------------------------------------------------------
+      subroutine ssh_WHETERO90 (nr,ihetero)
+C------------------------------------------------------------------------
+C
+C     -- DESCRIPTION
+C
+C     Associate kinetic rates of heterogeneous reactions with right variable
+C     for hetrxn.f.
+C
+C     HETERO -1 : HO2  -->  0.5 H2O2
+C     HETERO -2 : NO2  -->  0.5 HONO + 0.5 HNO3
+C     HETERO -3 : NO3  -->  HNO3
+C     HETERO -4 : N2O5 -->  2 HNO3
+C
+C------------------------------------------------------------------------
+C
+C     -- AUTHOR(S)
+C
+C     VICTOR LANNUQUE, 2020.
+C
+C------------------------------------------------------------------------
+      include 'nficfort'
+      integer nr,ihetero
+
+      If(ihetero.EQ.-1) then
+         write(nficK90,11)nr
+      elseif(ihetero.EQ.-2) then
+         write(nficK90,12)nr
+      elseif(ihetero.EQ.-3) then
+         write(nficK90,13)nr
+      elseif(ihetero.EQ.-4) then
+         write(nficK90,14)nr
+
+      else
+         write(*,*) 'ERROR: unknown heterogeneous reaction ',ihetero
+         stop 1
+      endif
+      
+      
+!     HETERO -1 : HO2  -->  0.5 H2O2
+ 11   format('  rk(',i4,') = rkhHO2')
+!     HETERO -2 : NO2  -->  0.5 HONO + 0.5 HNO3
+ 12   format('  rk(',i4,') = rkhNO2')
+!     HETERO -3 : NO3  -->  HNO3
+ 13   format('  rk(',i4,') = rkhNO3')
+!     HETERO -4 : N2O5 -->  2 HNO3
+ 14   format('  rk(',i4,') = rkhN2O5')
+
+      return
+      end
+      
+      
+      subroutine ssh_WSPEC_MELCHIOR2 (nr,ispebp)
+C------------------------------------------------------------------------
+C
+C     -- DESCRIPTION
+C
+C     Write kinetic rates case for specific reactions in
+C     MELCHIOR2 mechanism.
+C     
+C------------------------------------------------------------------------
+C
+C     -- AUTHOR(S)
+C
+C     Yelva Roustan, 2020.
+C
+C------------------------------------------------------------------------
+      include 'nficfort'
+      integer nr,ispebp
+
+      If(ispebp.EQ.-6) then
+         write(nficK90, 16) nr
+      elseif(ispebp.EQ.-7) then
+         write(nficK90, 17) nr
+      elseif(ispebp.EQ.-9) then
+         write(nficK90, 19) nr
+      else
+         write(*,*) 'ERROR: unknown specific reaction ',ispebp
+         stop 1
+      endif
+
+C     YS 19/11/2008 value given by IUPAC 2005
+C     NO2 + OH + M -> HNO3
+C     k(T, M) = mtroe(3.4e-30, 0, 3.2, 4.77e-11, 0, 1.4, 0.30)
+ 16   format(6x,'Rapk = 3.4d-30 * (300./temp)**(3.2)*SumM',/
+     &     6x,'Effko = Rapk/(4.77D-11*(300./temp)**1.4)',/
+     &     6x,'rk(',i3,')=(Rapk/(1.+Effko))*0.3** &',/
+     &     5x,'(1.0d0/(1.0d0+ ((dlog10(Effko)-0.12)/1.2)**2))')
+C     YR 28/04/2020 value given by REACTIONS.univ.melchior2
+C     N2O5 + H2O + H2O -> 2*HNO3      k=2e-39
+ 17   format(6x,'rk(',i3,') = 2.0d-39 * YlH2O * YlH2O')
+C     YR 28/04/2020 value given by REACTIONS.univ.melchior2
+C     Surface production by heterogeneous reaction (Aumont et al., 2003)
+C     NO2 -> HONO + NO2      ks = 0.5 * vd_NO2 / h
+C     with vd_NO2 = 0.033 cm / s in urban area.
+C     with h_mixing = 15 m in urban area.
+ 19   format(6x,'h_mixing  = 15.0d0',/
+     &     6x,'vd_NO2 = 0.00033d0',/
+     &     6x,'rk(',i3,') = 0.5d0 * vd_NO2 / h_mixing')
+      return
+      end
+
+
+
+
+
+
+
 C------------------------------------------------------------------------
       subroutine ssh_WTB90(nr,ittb,ratio)
 C------------------------------------------------------------------------
@@ -686,7 +799,7 @@ C------------------------------------------------------------------------
       elseif (ittb.EQ.6) then !genoa add TB RO2 
          write(nficK90,16)nr,nr
       elseif (ittb.EQ.7) then
-         write(nficK90,17)nr,nr,ratio !genoa add a number
+         write(nficK90,17)nr,nr,ratio !zhizhao add a number
       endif
 
  11   format('  rk(',i4,') = rk(',i4,') * SumM')
@@ -696,7 +809,7 @@ C     Seinfeld pp 22: N2 0.78; O2 0.21
  14   format('  rk(',i4,') = rk(',i4,') * YlH2O')
  15   format('  rk(',i4,') = rk(',i4,') * SumM * 5.8d-7')
  16   format('  rk(',i4,') = rk(',i4,') * RO2') !genoa TB RO2
- 17   format('  rk(',i4,') = rk(',i4,') * ',D23.16)!!genoa add a number
+ 17   format('  rk(',i4,') = rk(',i4,') * ',D23.16)!!zhizhao add a number
       return
       end
 C------------------------------------------------------------------------

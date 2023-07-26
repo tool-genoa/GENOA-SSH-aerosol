@@ -132,20 +132,20 @@ c     Write file non_zero.dat
 c
       call ssh_WNONZERO90(s,nr,jer)
 C
-C!genoa      write(*,*)'########################################'
-C!genoa      write(*,*)'########################################'
-C!genoa      write(6,*)'Summary for the kinetic scheme'
-C!genoa      write(*,*)'Total number of reactions =',nr
-C!genoa      write(*,*)'Number of photolytic reactions =',nrphot
-C!genoa      write(*,*)'Number of dissociation equilibria =',nequil
+C!zhizhao      write(*,*)'########################################'
+C!zhizhao      write(*,*)'########################################'
+C!zhizhao      write(6,*)'Summary for the kinetic scheme'
+C!zhizhao      write(*,*)'Total number of reactions =',nr
+C!zhizhao      write(*,*)'Number of photolytic reactions =',nrphot
+C!zhizhao      write(*,*)'Number of dissociation equilibria =',nequil
 c
-C!genoa      if (indicaq.eq.0) then
-C!genoa         write(*,*)'Gas-phase chemistry'
-C!genoa      endif
+C!zhizhao      if (indicaq.eq.0) then
+C!zhizhao         write(*,*)'Gas-phase chemistry'
+C!zhizhao      endif
 c
-C!genoa      if (indicaq.eq.1) then
-C!genoa         write(*,*)'Multiphase (gas-phase and aqueous-phase) chemistry'
-C!genoa      endif
+C!zhizhao      if (indicaq.eq.1) then
+C!zhizhao         write(*,*)'Multiphase (gas-phase and aqueous-phase) chemistry'
+C!zhizhao      endif
 c
       call ssh_initphase
 c

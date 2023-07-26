@@ -1,13 +1,18 @@
-# -*- coding: utf-8 -*-
-#================================================================================
+# ================================================================================
 #
-#     GENOA v1.0: the GENerator of reduced Organic Aerosol mechanism
+#   GENOA v2.0: the GENerator of reduced Organic Aerosol mechanism
 #
-#     Copyright (C) 2022 CEREA (ENPC) - INERIS.
-#     GENOA is distributed under GPL v3.
+#    Copyright (C) 2023 CEREA (ENPC) - INERIS.
+#    GENOA is distributed under GPL v3.
 #
-#================================================================================
- 
+# ================================================================================
+#
+#  AutoTrainingSeries.py runs the series reduction.
+#
+#  To be checked woth GENOA v2.0. 
+#
+# ================================================================================
+
 import sys
 import os
 import json
@@ -17,16 +22,19 @@ import numpy as np
 
 from string import ascii_letters, digits
 
-from Parameters import RunSets, Roptions, prefix, primaryVOCs, pathSSH_rdc, \
+from Parameters import RunSets, Roptions, prefix, \
+                       primaryVOCs, pathSSH_rdc, \
                        locs, Ttot, DeltaT, Tnow, \
                        initfile, pathInitFiles, \
                        pathNewRes, pathNewChem, tail
 from Functions import isfloat, isint, get_info, \
                       create_folder, get_locations
-from DataStream import read_chem_sets,to_SSH_sets, \
-                       reaction_seperate, reaction_merge
-from ReductionStrategy import reduce_reaction_byRemove,reduce_reaction_byLump, \
-                              trim_scheme, reduce_reaction_bySpecies
+from DataStream import read_chem_sets,to_SSH_sets
+from ReductionStrategy import reduce_reaction_byRemove, \
+                              reduce_reaction_byLump, \
+                              reduce_reaction_bySpecies, \
+                              trim_scheme, reaction_seperate, \
+                              reaction_merge
 from SSHSetUp import run_SSH
 from KineticMCMtoPython import update_kinetic_rate
 from AutoTesting import auto_testing
@@ -36,18 +44,15 @@ from ChemRelation import tree, get_species_from_reactions
 auto_type_name = {'rm': 'Removing reaction',
                   'rm1':'Removing elementary-like reaction',
                   'lp': 'Lumping',
-                  'da': 'Removing aerosols',
-                  'rs': 'Removing gas-particle partitioning',
-                  'rp': 'Jumping',
-                  'jp': 'Replacing' }
+                  'da': 'Removing gas-particle partitioning',
+                  'rs': 'Removing species',
+                  'jp': 'Jumping',
+                  'rp': 'Replacing' }
 
 auto_names = list(auto_type_name.keys())
 letters = ascii_letters + digits
 
-# freeze compounds
-NoLumps = Roptions['FreezeSpecies']
-
-def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathInitFiles = pathInitFiles, err_ref_pre = 0.50, ATSetups = RunSets[4]):
+def auto_training_srs(Setups = RunSets[3], locs = locs, pathInitFiles = pathInitFiles, err_ref_pre = 0.50, ATSetups = RunSets[4]):
     """
         Objectives: run GENOA reduction
 
@@ -76,12 +81,14 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
     auto_types = Setups['strategy_types']
     BranchRatios = Setups['BranchRatio']
 
+    # frozen compounds
+    NoLumps = Setups['frozenspecies']
 
     # tags
     tag_quick_mode = Setups['tag_quick_mode']
     tag_pre_rdc = Setups['tag_pre_reduction']
-    tag_check_median = Setups['tag_check_median']
-    tag_check_average = Setups['tag_check_average']
+    tag_check_median = True
+    tag_check_average = True
     tag_testing = Setups['tag_testing']
 
     tag_check_redo = Setups['tag_redo']
@@ -146,7 +153,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
     # cp pre chem
     if os.path.exists('{:s}/{:s}'.format(pre_chem_path,IDchemPre)):
         if not os.path.exists('{:s}/{:s}'.format(path_sav_chem,IDchemPre)):
-            shutil.copytree(pre_chem_path+'/'+IDchemPre,path_sav_chem)
+            shutil.copytree(pre_chem_path+'/'+IDchemPre,path_sav_chem+'/'+IDchemPre)
     else:
         raise FileNotFoundError('Can not find IDchemPre: {:s}/{:s}'.format(pre_chem_path,IDchemPre))
 
@@ -304,7 +311,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                                                               trd_max = 1,
                                                               out_file = False,
                                                               sav_soapath = False)
-                emax_ind = 'm{:d}y{:d}x{:d}'.format(emax_ind[0][2], emax_ind[0][0], emax_ind[0][1])
+                if emax_ind != []: emax_ind = 'm{:d}y{:d}x{:d}'.format(emax_ind[0][2], emax_ind[0][0], emax_ind[0][1])
                 frec.write('Pre-Testing on IDchemPre {:s}: err loc: {:}\terr max: {:6.4f}\t err ave: {:6.4f}\t err ave max: {:6.4f}\n'.format(IDchemPre, emax_ind, emax, eave, eave_max))
             frec.flush()
 
@@ -318,7 +325,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                 try_max_now = max(emax, try_max_ref)
 
         # copy in tmp folder
-        to_SSH_sets(path_sav_chem,IDchem+'_tmp',rc,sp,0)
+        to_SSH_sets(path_sav_chem,IDchem+'_tmp',rc,sp,'10')
 
         # for those strategies that do not use the functions in ReductionStrategy
         rkaer = []
@@ -470,14 +477,20 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                 # output
                 tar = rcn
 
-            elif auto_type == 'rp':
+            elif auto_type == 'jp':
                 # reduction by removing reactions
                 lump, lumppd = reduce_reaction_bySpecies(rc,sp,'jump',1, frozen)
                 if len(lump) == 0: break # no rp found, stop
-                else: 
-                    tar = lump[0]+'->'+lumppd[0][0][0] # for print info
+                else: # for print and frozen
+                    tar = ''
+                    if len(lump) == 1 : # 'A1 A2 A3 -> B' or 'A1 -> B' 
+                        for s in lumppd[0][0]: tar+=(s+',')
+                        tar = '{:s}->{:s}'.format(lump[0], tar[:-1])
+                    else: # 'A -> B1 B2 B3'
+                        for s in lump: tar+=(s+',')
+                        tar = '{:s}->{:s}'.format(tar[:-1],lumppd[0][0][0])
                 
-            elif auto_type == 'jp':
+            elif auto_type == 'rp':
                 # reduction by removing reactions
                 lump, lumppd = reduce_reaction_bySpecies(rc,sp,'replace',1, frozen)
                 if len(lump) == 0: break
@@ -535,7 +548,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
             # clean up
             rc,sp,trim_sp = trim_scheme(rc,sp)
             # output into SSH-aerosol
-            to_SSH_sets(path_sav_chem,IDchem,rc,sp,0)
+            to_SSH_sets(path_sav_chem,IDchem,rc,sp,'10')
 
             # init for simulations
             tag_sim = 1 # 0/1/2 for no train/ train/ train with wider errs
@@ -650,7 +663,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                     shutil.copy('{:s}/{:s}/aero/Organics_1.txt'.format(pathSSH_rdc,j),
                                 '{:s}/{:d}.txt'.format(pathSSH_rdc,i))
                 # update chem in tmp folder
-                to_SSH_sets(path_sav_chem,IDchem+'_tmp',rc,sp,0)
+                to_SSH_sets(path_sav_chem,IDchem+'_tmp',rc,sp,'10')
                 # update size
                 #nrea, ngas, naer = nrea0, ngas0, naer0
                 # for record
@@ -719,8 +732,8 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
             rc = reaction_merge(rc,sp) # remerge
             nrea, ngas, naer = get_info(rc,sp,'') # get size
 
-        if naer < 20: to_SSH_sets(path_sav_chem,IDchem,rc,sp,1) #output viz file
-        else: to_SSH_sets(path_sav_chem,IDchem,rc,sp,0)
+        if naer < 20: to_SSH_sets(path_sav_chem,IDchem,rc,sp,'20') #output viz file
+        else: to_SSH_sets(path_sav_chem,IDchem,rc,sp,'10')
 
         # final print out
         tmp = 'END, total run: {:d} times, valid run: {:d}\n'.format(nrun,nval)
@@ -909,7 +922,8 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                             nBRT = 0
                             if tag_stage: # set for late stage
                                 if BranchRatios != [1.]: BranchRatios = [1.]
-                            elif BranchRatios != [1E-1, 5E-1, 1.] and err_refs[nerr] == 0.03 : 
+                            # set only for BCARY reduction
+                            elif len(BranchRatios) >= 3 and BranchRatios != [1E-1, 5E-1, 1.] and err_refs[nerr] == 0.03 : 
                                 BranchRatios = [1E-1, 5E-1, 1.]
 
                 # meet the condition to stop
@@ -942,7 +956,7 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
 
         # set only for pre-reduction without lp
         if tag_pre_rdc and 'lp' not in auto_types and nerr == tag_pre_rdc: # pre-reduction finished
-            auto_types = ['rm','rp','lp','jp','rs','da']
+            auto_types = ['rm','jp','lp','rp','rs','da']
             nauto = len(auto_types)
             # change iauto from
             iauto = (int(iauto/nauto)+1) * nauto
@@ -960,14 +974,16 @@ def auto_training_srs(Setups = RunSets[3], NoLumps = NoLumps, locs = locs, pathI
                                 '{:s}_{:s}'.format(recordfile+'_'+f,isp))
 
         # update reduction strategy
-        if tag_rm1 and 'rm1' not in auto_types:
-            auto_types = ['rm','rm1','rp','lp','jp','rs','da']
+        if tag_rm1 and 'rm1' not in auto_types and 'rm' in auto_types:
+            auto_types.insert(auto_types.index('rm')+1,'rm1')
+            #auto_types = ['rm','rm1','jp','lp','rp','rs','da']
             nauto = len(auto_types) # reser nauto
             BranchRatios = [1.]
             nBRT = 0
             if iauto%nauto: # reset iauto
                 iauto += nauto - iauto%nauto
-            frec.write('+=+= change auto_types: add rm1\n')
+            #frec.write('+=+= change auto_types: add rm1\n')
+            frec.write('+=+= change auto_types: add rm1. Now: {:}\n'.format(auto_types))
             # update stage
             tag_stage = 2
             # set pre case from rdcs cases

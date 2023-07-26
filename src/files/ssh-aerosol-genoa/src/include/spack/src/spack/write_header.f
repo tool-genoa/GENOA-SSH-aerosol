@@ -48,47 +48,6 @@ C------------------------------------------------------------------------
       include 'parametre'
       integer nwrite
 
-C     Setup of Heterogeneous reactions no.
-      integer HR1,HR2,HR3,HR4
-      common /HR/ HR1,HR2,HR3,HR4
-
-c---------- for RACM
-c      if (chem_mechanism.eq.1) then
-      if (mechanism_name .eq. "racm  " .or.
-     &    mechanism_name .eq. "radm  ") then
-      HR1=238
-      HR2=239
-      HR3=240
-      HR4=241
-c      mechanism_name = 'racm'
-c---------- for CB05
-c      elseif (chem_mechanism.eq.2) then
-      elseif (mechanism_name .eq. "cb05  " .or.
-     &     mechanism_name .eq. "cb05en" ) then
-      HR1=152
-      HR2=153
-      HR3=154
-      HR4=155
-
-      elseif (mechanism_name .eq. "cb05v0") then
-C     for cb05v0
-      HR1=156
-      HR2=157
-      HR3=158
-      HR4=159
-c      mechanism_name = 'cb05'
-c---------- for RACM2
-c      elseif (chem_mechanism.eq.3) then
-      elseif (mechanism_name .eq. "racm2 ") then
-      HR1=352
-      HR2=353
-      HR3=354
-      HR4=355
-c      mechanism_name = 'racm2'
-      else
-      write(*,*) "Error:"
-      write(*,*) "wrong number of chemical mechanism in parametre"
-      endif
 
 C     Routine dimensions.f90
       nficdim90=ipiste
@@ -125,7 +84,7 @@ C===========
  4012 format(4x,'Press,azi,att,lwctmp,granulo,WetDiam,',
      2     'dsf_aero,ispeclost, &')
       write(nwrite,4013)
- 4013 format(4x,'Wmol,LWCmin,option_photolysis,RO2,SumM,tag_SumM)')!genoa add input for RO2 conc.
+ 4013 format(4x,'Wmol,LWCmin,option_photolysis,RO2)')
 
 C===========
 C     Only gas-phase reactions
@@ -136,7 +95,7 @@ C==========
       write(nwrite,4015)
  4015 format(4x,'nr,rk,temp,xlw,Press,azi,att, &')
       write(nwrite,4016)
- 4016 format(4x,'option_photolysis,RO2,SumM,tag_SumM)')!genoa add input for RO2 conc.
+ 4016 format(4x,'option_photolysis,RO2)')
       endif
 C=====================
       write(nwrite,300)
@@ -219,10 +178,14 @@ C     aerosol formation ==============
       if (aerosol_formation) then
       write(nwrite,421)
  421  format('  integer Ns,Nbin_aer,nr')
-      write(nwrite,4311) HR1,HR2,HR3,HR4
- 4311 format('  double precision rk',I3,',rk',I3,',rk',I3,',rk',I3)
+ 
+
+      write(nwrite,4312)
+ 4312 format('  double precision rkhHO2,rkhNO2,rkhNO3,rkhN2O5')
+
+
       write(nwrite,4341)
- 4341 format('  double precision lwctmp')
+ 4341 format('  double precision lwctmp,VH2O,VN2,VO2')
       write(nwrite,4342)
  4342 format('  double precision WetDiam(Nbin_aer)')
       write(nwrite,4343)
@@ -243,12 +206,14 @@ C ====================================
       write(nwrite,432)
  432  format('  double precision rk(nr),temp,xlw,Press')
       write(nwrite,433)
- 433  format('  double precision Effko,Rapk,facteur,SumM,RO2,', !genoa init RO2
-     2     'azi,att,cosX,secX')!genoa init cosX secX
+ 433  format('  double precision Effko,Rapk,facteur,SumM,RO2,',
+     2     'azi,att,cosX,secX')
       write(nwrite,434)
  434  format('  double precision YlH2O')
+      write(nwrite,4348)
+ 4348 format('      double precision vd_NO2, h_mixing')
       write(nwrite,435)
- 435  format('  integer option_photolysis, tag_SumM')
+ 435  format('  integer option_photolysis')
       write(nwrite,300)
       write(nwrite,438)
  438  format('!     Compute third body.')
@@ -259,7 +224,7 @@ C ====================================
      2     ' TEMP in Kelvin')
       write(nwrite,300)
       write(nwrite,441)
- 441  format('if (tag_SumM .eq. 0) SumM = Press * 7.243D16 / temp') !genoa 'if (SumM .le. 0.d0)  SumM = Press * 7.243D16 / temp'
+ 441  format('  SumM = Press * 7.243D16 / temp')
       write(nwrite,300)
       write(nwrite,442)
  442  format('!     Number of water molecules computed from',
@@ -275,25 +240,63 @@ C ====================================
       write(nwrite,300)
       write(nwrite,446)
  446  format('  azi=abs(azi)')
-
-C     genoa add for photolysis
-      write(nwrite,447)
-      write(nwrite,448)
-      write(nwrite,449)
-      write(nwrite,450)
-      write(nwrite,451)
-      write(nwrite,452)
-      write(nwrite,453)
- 447  format('  if (azi.lt.90) then')            ! with photolysis
- 448  format('      cosX=dcos(azi/180.D0*3.14159265358979323846D0)')             ! cosX
- 449  format('      secX=1.0d+0/(cosX+1.0D-30)') ! secX
- 450  format('  else')                           ! without photolysis
- 451  format('      cosX=0.d0')                  ! cosX
- 452  format('      secX=0.d0')                  ! secX
- 453  format('  endif')
-C     genoa end add for photolysis
-
       write(nwrite,300)
+        
+C     heterogeneous reactions with adaptative reaction number      
+      if (aerosol_formation) then
+      write(nwrite,451)
+ 451  format('!     For the Heteroheneous Reac. on aerosol surface:')
+      write(nwrite,150)
+      write(nwrite,452)
+ 452  format('!    Reaction : HO2  -->  0.5 H2O2')
+      write(nwrite,453)
+ 453  format('!    Reaction : NO2  -->  0.5 HONO + 0.5 HNO3')
+      write(nwrite,454)
+ 454  format('!    Reaction : NO3  -->  HNO3')
+      write(nwrite,455)
+ 455  format('!    Reaction : N2O5 -->  2 HNO3')
+      write(nwrite,300)
+      write(nwrite,456)
+ 456  format(2x,'rkhHO2=0.D0')
+      write(nwrite,457)
+ 457  format(2x,'rkhNO2=0.D0')
+      write(nwrite,458)
+ 458  format(2x,'rkhNO3=0.D0')
+      write(nwrite,459)
+ 459  format(2x,'rkhN2O5=0.D0')
+      write(nwrite,300)
+      write(nwrite,460)
+ 460  format(2x,'if (IHETER.eq.1) then')
+      write(nwrite,461)
+ 461  format(2x,'  call HETRXN(Ns,Nbin_aer,temp,press,ICLD,lwctmp, &')
+      write(nwrite,462)
+ 462  format(2x,'    WetDiam,granulo,rkhHO2,rkhNO2,rkhNO3,rkhN2O5, &')
+      write(nwrite,463)
+ 463  format(2x,'    dsf_aero,ispeclost,Wmol,LWCmin)')
+      write(nwrite,464)
+ 464  format(2x,'endif')
+      write(nwrite,300)
+      endif
+
+C     add for MCM photolysis
+      write(nwrite,465)
+      write(nwrite,466)
+      write(nwrite,467)
+      write(nwrite,468)
+      write(nwrite,469)
+      write(nwrite,470)
+      write(nwrite,471)
+      write(nwrite,300)
+
+ 465  format('  cosX=0.d0 !init')                  ! init cosX
+ 466  format('  secX=0.d0 !init')                  ! init secX
+ 467  format('  if (azi.lt.9d2) then ! with photolysis')
+ 468  format('      cosX=max(0d0,dcos(azi/1.8D2* &')
+ 469  format('            3.14159265358979323846D0))')! cosX
+ 470  format('      if (cosX.gt.0d0) secX=1.0d+0/(cosX+1.0D-30)')! secX
+ 471  format('  endif')
+
+C     end add for MCM photolysis
 
 C     Routine fexchem.f90
       nficf90=ipiste

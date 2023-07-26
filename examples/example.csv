@@ -1,0 +1,20 @@
+# This is an emaple file to assign reduction paramters and options for different training stages,,,,,,,,,
+# first line and line starts with # won't be read
+"# Triaining stages - not read, used only for comments",I,I,I,I,I,I,II,III,III
+"# reduction error tolerances. if zero, use default values, if -1, not used",,,,,,,,,
+"# err_ref: max err compared to ref, err_rav: ave err compared to ref",,,,,,,,,
+err_ref,0.005,0.01,0.015,0.02,0.025,0.03,0.3,0.3,0.3,0.3
+err_rav,0.0025,0.005,0.0075,0.01,0.0125,0.015,0.03,0.04,0.05,0.03
+# err_pre: max err compared to previously reduced mechanism; err_pav: ave err,,,,,,,,,
+err_pre,0.005,0.01,0.01,0.01,0.01,0.01,1,1,1,1
+err_pav,0.0025,0.005,0.0075,0.005,0.005,0.005,1,1,1,1
+# delta_err - error change threshold: default values: err_ref/10 for training dataset, err_rav/10 for pre-testing dataset
+# training or pre-testing dataset: tag_pre_testing == 0: training dataset; == 1 use pre-testing dataset
+tag_pre_testing,0,0,0,0,0,0,1,1,1,1
+# Tags to active reduction options
+# aerosol-oriented treatment: activated - tag_stage = 2 & tag_stage_once = 1; half: tag_stage = 2 & tag_stage_once = 0; inactivated: tag_stage = 0,,,,,,,,,
+tag_stage,0,0,0,0,0,0,1,1,1,0
+# change reaction list to elementory-like reactions: tag_rm == 1: elementory-like treatment is activatied,,,,,,,,,
+tag_rm1,0,0,0,0,0,0,0,1,1,1
+# efficient treatment: allow next cycle if nval <= tag_efficient,,,,,,,,,
+tag_efficient,5,5,5,5,5,5,5,0,0,0

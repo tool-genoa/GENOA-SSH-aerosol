@@ -127,27 +127,43 @@ module SSHaerosolAPI
       integer, parameter :: size_namelist_file = 400
       character(kind=c_char), intent(in) :: input_namelist_file(size_namelist_file)
       character(len=size_namelist_file) :: namelist_file
-      
-      ! N_gas = 93; N_reaction = 206; N_photolysis = 24 
-      call ssh_dimensions(N_gas, n_reaction, n_photolysis)  
 
+      
+      ! N_gas = 93; N_reaction = 206; N_photolysis = 24
+      
+      call ssh_dimensions(N_gas, n_reaction, n_photolysis)  
+      
+      
+      
       ! Read SSH simulation settings file
       namelist_file = transfer(input_namelist_file(1:size_namelist_file), &
                                namelist_file)
+
+      
       call ssh_read_namelist(namelist_file)
-
+      
+      
       ! Read inputs
+      
       call ssh_read_inputs()
-
+      
+      
       ! Read meteo
+      
       call ssh_read_meteo()
-
+      
       ! Initialize parameters
+
+      
       call ssh_init_parameters()
-
+      
+      
       ! Initialize coag coefficients
+      
       call ssh_api_init_coag()
-
+      
+      
+      
     end subroutine ssh_api_initialize
 
 ! =============================================================
@@ -1533,7 +1549,7 @@ module SSHaerosolAPI
 
       if (tag_chem .ne. 0) then
         if (tag_twostep .ne. 1) then
-          call ssh_chem(n_gas, n_reaction, n_photolysis, photolysis_reaction_index,&
+          call ssh_chem_twostep(n_gas, n_reaction, n_photolysis, photolysis_reaction_index,&
               ns_source, source_index, conversionfactor, conversionfactorjacobian,&
               0, lwc_cloud_threshold, molecular_weight, &
               current_time, attenuation, &
@@ -1556,7 +1572,7 @@ module SSHaerosolAPI
               mass_density)
         else
           ! solve chemistry with the two-step time numerical solver if tag_twostep .eq. 1
-          call ssh_chem(n_gas, n_reaction, n_photolysis, photolysis_reaction_index,&
+          call ssh_chem_twostep(n_gas, n_reaction, n_photolysis, photolysis_reaction_index,&
               ns_source, source_index, conversionfactor, conversionfactorjacobian,&
               0, lwc_cloud_threshold, molecular_weight, &
               current_time, attenuation, &
@@ -2027,6 +2043,30 @@ module SSHaerosolAPI
 
     end subroutine ssh_api_get_wet_diameter
 
+! =============================================================
+!
+! External code can set aerosol wet diameter
+!
+! input : m
+! output : micro.m
+! =============================================================
+
+    subroutine ssh_api_set_wet_diameter(array) bind(c, name='api_sshaerosol_set_wet_diameter_')
+
+      use iso_c_binding
+      use aInitialization, only : wet_diameter, N_size
+
+      implicit none
+
+      real(kind=c_double), dimension(N_size) :: array
+
+      ! Unit conversion from m to micro.m
+      wet_diameter = array * 1.e6
+
+    end subroutine ssh_api_set_wet_diameter
+
+
+    
 ! =============================================================
 !
 ! External code can get aerosol_type

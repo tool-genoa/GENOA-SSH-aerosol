@@ -724,17 +724,28 @@ SUBROUTINE SSH_REDIST_EULERCOUPLE(ns,naer,n,qesp,with_fixed_density,fixed_densit
      if(iredist.EQ.0) then
         ! redistribute over fixed sections
         IF (j1hi.LE.0) THEN ! Use Euler-Number for the first section
-           Nnew(1) = Nnew(1) + N(js2)
-           Qtotal = Nnew(1) * CST * rho(1) * fixed_diameter(1)**3
+           ! Added to take into account the particles
+           ! less than the first size bin.
+           ! But it can lead to a high increase
+           ! in the mass/number concentration (YK, KS, TS).
+
+           ! Nnew(1) = Nnew(1) + N(js2)
+           ! Qtotal = Nnew(1) * CST * rho(1) * fixed_diameter(1)**3
            aam = 0.d0
            DO jesp = 1,naer-1
-              aam = aam + qesp(js2,jesp)
+               aam = aam + qesp(js2,jesp)
            END DO
            if(aam.GT.TINYM) then
-              DO jesp = 1,naer
-                 qnew(1,jesp) = qnew(1,jesp) + Qtotal/aam*qesp(js2,jesp)
-              END DO
+               Qtotal = 0.D0
+               DO jesp = 1,naer
+                  qnew(1,jesp) = qnew(1,jesp) + qesp(js2,jesp)
+                  Qtotal = Qtotal + qnew(NS,jesp)
+               END DO
+            endif
+           if (with_fixed_density .eq. 0) then
+              CALL ssh_compute_density(ns,naer, EH2O,TINYM,qnew,LMD,1,rho(1))
            endif
+           Nnew(1) =  Qtotal/CST/rho(1)/fixed_diameter(NS)**3
         ELSEIF (j1hi.GE.NS) THEN ! use Euler-Mass for the last section
            Qtotal = 0.D0
            DO jesp = 1,naer-1
@@ -865,17 +876,22 @@ SUBROUTINE SSH_REDIST_MOVINGDIAM(ns,naer,n,q,with_fixed_density,fixed_density,rh
      IF (N(js2).GT.TINYN) THEN
         ! redistribute over fixed sections
         IF (j1hi.LE.0) THEN ! Use Euler-Number for the first section
-           Nnew(1) = Nnew(1) + N(js2)
-           Qtotal = Nnew(1) * CST * rho(1) * fixed_diameter(1)**3
+           ! Added to take into account the particles
+           ! less than the first size bin.
+           ! But it can lead to a high increase
+           ! in the mass/number concentration (YK, KS, TS).
+
+           ! Nnew(1) = Nnew(1) + N(js2)
+           ! Qtotal = Nnew(1) * CST * rho(1) * fixed_diameter(1)**3
            aam = 0.d0
-           DO jesp = 1,naer-1
-              aam = aam + q(js2,jesp)
-           END DO
-           if(aam.GT.TINYM) then
-              DO jesp = 1,naer
-                 qnew(1,jesp) = qnew(1,jesp) + Qtotal/aam*q(js2,jesp)
-              END DO
-           endif
+           ! DO jesp = 1,naer-1
+           !    aam = aam + q(js2,jesp)
+           ! END DO
+           ! if(aam.GT.TINYM) then
+           !    DO jesp = 1,naer
+           !       qnew(1,jesp) = qnew(1,jesp) + Qtotal/aam*q(js2,jesp)
+           !    END DO
+           ! endif
         ELSEIF (j1hi.GE.NS) THEN ! use Euler-Mass for the last section
            Qtotal = 0.D0
            DO jesp = 1,naer-1

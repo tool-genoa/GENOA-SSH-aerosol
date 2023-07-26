@@ -75,7 +75,7 @@ class Spack:
         #for filename in ["dimensions.f90", "dratedc.f90", "fexchem.f90",
         #                 "jacdchemdc.f90", "kinetic.f90", "rates.f90",
         #                 "LU_decompose.f90", "LU_solve.f90", "LU_solve_tr.f90",
-        # use in two-step time numerical solver #genoa
+        # only use in two-step time numerical solver
         for filename in ["dimensions.f90", "dratedc.f90", "kinetic.f90",
                          "rates.f90", "fexloss.f90", "fexprod.f90"]:
 

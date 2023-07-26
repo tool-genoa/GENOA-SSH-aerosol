@@ -112,11 +112,11 @@ c
       indicaq=0
       if (nesp(3).gt.0) indicaq=1
       indicaqcom=indicaq
-C!genoa      write(6,*)'Number of multiphase species (nesp): ',nesp(1)
-C!genoa      write(6,*)'Number of gas-phase species: ',nesp(2)
-C!genoa      write(6,*)'Number of aqueous-phase species: ',nesp(3)
-C!genoa      write(6,*)'Max number of species (nespmax): ',nespmax
-C!genoa      write(6,*)'Max number of reactions (nrmax): ',nrmax
+C!zhizhao      write(6,*)'Number of multiphase species (nesp): ',nesp(1)
+C!zhizhao      write(6,*)'Number of gas-phase species: ',nesp(2)
+C!zhizhao      write(6,*)'Number of aqueous-phase species: ',nesp(3)
+C!zhizhao      write(6,*)'Max number of species (nespmax): ',nespmax
+C!zhizhao      write(6,*)'Max number of reactions (nrmax): ',nrmax
       if (nesp(1).gt.nespmax) then
          write(*,*)'ERROR: dimension, nesp>nespmax'
          call ssh_halte

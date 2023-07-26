@@ -1,5 +1,5 @@
-      
-      SUBROUTINE ssh_chem (ns,nr,nrphot,nreactphot
+
+      SUBROUTINE ssh_chem_twostep (ns,nr,nrphot,nreactphot
      $     ,nemis,nemisspecies,convers_factor,convers_factor_jac
      $     ,nzemis,LWCmin,Wmol,ts,DLattenuation
      $     ,DLhumid,DLtemp,DLpress,DLCsourc,DLCphotolysis_rates,delta_t
@@ -10,13 +10,26 @@
      $     ,DLconc_aer,option_adaptive_time_step, TOL, tstep_min
      $     ,option_photolysis,jBiPER,kBiPER,INUM,IDENS
      $     ,DLnumconc_aer,mass_density_aer
-     $     ,ncst_chem,cinorg,cstindex !genoa add constant gas conc.
-     $     ,tag_RO2,nRO2_chem,iRO2,iRO2_cst,RO2index !genoa add treatment of RO2
-     $     ,iSumM,tag_SumM, aerosol_species_interact) !genoa add cst sumM
+     $     ,ncst_gas, cst_gas, cst_gas_index !genoa use constant gas conc.
+     $     ,tag_RO2, nRO2_chem, iRO2, iRO2_cst, RO2index  ! for RO2-RO2 reaction
+     $     ,aerosol_species_interact)
 
+C------------------------------------------------------------------------
+C     
+C     -- DESCRIPTION 
+C     
+C     This routine computes the chemistry with the 
+C     TWO-STEP time numerical solver. It is based on
+C     the application of a Gauss-Seidel iteration 
+C     scheme to the two-step implicit backward 
+C     differentiation (BDF2) formula.
+C 
+C     Reference: Verwer J. (1994). Gauss-Seidel 
+C       iteration for stiff odes from chemical kinetics.
+C       Journal on Scientific Computing, 15:1243-1250
+C     
+C------------------------------------------------------------------------
 
-C     !$     ,ncst_chem,nRO2_chem,iRO2,tag_inorg!genoa add
-C     !$     ,tag_RO2,cstindex,RO2index,cinorg,iHO2,iSumM)!genoa add
 
       IMPLICIT NONE
 
@@ -25,13 +38,10 @@ C     !$     ,tag_RO2,cstindex,RO2index,cinorg,iHO2,iSumM)!genoa add
       INCLUDE 'paraero.inc'
 
       DOUBLE PRECISION ts,delta_t
-      DOUBLE PRECISION toadd
 
-      integer i1,i2,j1,j2,nx,ny,nz,ns,nr,nrphot,nemis,nzemis,s
+      integer i1,i2,j1,j2,nx,ny,nz,ns,nr,nrphot,nemis,nzemis
 
       DOUBLE PRECISION DLconc(ns),ZC(NS)
-      DOUBLE PRECISION ratio_gas(ns),ZCtot(NS),DLconc_save(ns)
-      DOUBLE PRECISION ZCtot_save(ns)
       DOUBLE PRECISION DLtemp,DLtempf
       DOUBLE PRECISION DLattenuation
       DOUBLE PRECISION DLattenuationf
@@ -86,15 +96,11 @@ C     !$     ,tag_RO2,cstindex,RO2index,cinorg,iHO2,iSumM)!genoa add
       double precision rho_dry(nbin_aer)
       double precision mass_density_aer(ns_aer)
 
-C !!!!new genoa
-      integer ncst_chem,nRO2_chem,iRO2,iRO2_cst,tag_RO2
-      integer iSumM, tag_SumM
-      integer m,j !m nombre d'iteration
-      integer cstindex(ncst_chem), RO2index(nRO2_chem)
-      DOUBLE PRECISION cinorg(ncst_chem),ZC_old(ncst_chem)
+C     Parameters initialized for the two-step solver
+      integer m,j!m nombre d'iteration
       DOUBLE PRECISION DLRki(Nr),DLRkf(Nr),dw(Nr,Ns)
-      DOUBLE PRECISION tschem,tfchem,dun,dzero,SumM
-      DOUBLE PRECISION alpha,TOL,rtol,atol,RO2
+      DOUBLE PRECISION tschem,tfchem,dun,dzero
+      DOUBLE PRECISION alpha,TOL,rtol,atol
       PARAMETER (alpha=5.d0)
       PARAMETER (dun=1.d0)
       PARAMETER (dzero=0.d0)
@@ -103,16 +109,23 @@ C !!!!new genoa
       DOUBLE PRECISION chpr0(NS),chlo0(NS),conci(NS),concii(NS)
       DOUBLE PRECISION :: wk,dtnsave,error_max,c,gam,ratloss
 
-      integer aerosol_species_interact(Ns)
-      integer keep_gp
-C !!!!
-
       INTEGER option_adaptive_time_step
       INTEGER option_photolysis
 
 C     To take into account BiPER degradation inside the particle
       INTEGER jBiPER,kBiPER
       DOUBLE PRECISION saveDLBiPER(nbin_aer)
+
+C     genoa for RO2-RO2 reaction and constant profile
+      INTEGER ncst_gas,nRO2_chem,iRO2,iRO2_cst,tag_RO2
+      INTEGER cst_gas_index(ncst_gas), RO2index(nRO2_chem)
+      DOUBLE PRECISION RO2,cst_gas(ncst_gas),ZC_cst(ncst_gas)
+
+C     genoa keep_gp
+      integer s, keep_gp
+      integer aerosol_species_interact(Ns)
+      DOUBLE PRECISION toadd, ZCtot_save(ns)
+      DOUBLE PRECISION ratio_gas(ns),ZCtot(NS),DLconc_save(ns)
 
 C     Aerosol density converted in microg / microm^3.
       RHOA = fixed_density_aer * 1.D-09
@@ -123,7 +136,7 @@ C     Aerosol discretization converted in microm.
 
 C     relations between bin idx and size idx
       DO Jb=1,nbin_aer
-        idx_bs(Jb)=(Jb-1)/ncomp_aer+1
+      idx_bs(Jb)=(Jb-1)/ncomp_aer+1
       ENDDO
 
 C     With real number concentration.
@@ -228,13 +241,13 @@ C     Projection.
       endif
       !print*,maxval(ratio_gas)
 
-C!  input constant concentration
-      if (ncst_chem.gt.0) then
-        do i1=1,ncst_chem
-           ZC_old(i1)=cinorg(i1)* convers_factor(cstindex(i1))
-           ZC(cstindex(i1))=ZC_old(i1)
-           ZCtot(cstindex(i1))=ZC_old(i1)
-           ZCtot_save(cstindex(i1))=ZCtot(cstindex(i1))
+C!  input constant concentration genoa
+      if (ncst_gas.gt.0) then
+        do i1=1,ncst_gas
+           ZC_cst(i1)=cst_gas(i1)* convers_factor(cst_gas_index(i1))
+           ZC(cst_gas_index(i1))=ZC_cst(i1)
+           ZCtot(cst_gas_index(i1))=ZC_cst(i1)
+           ZCtot_save(cst_gas_index(i1))=ZCtot(cst_gas_index(i1))
            ratio_gas(i1)=1.d0
         enddo
       endif
@@ -259,7 +272,7 @@ C     compute the particle number (mass/geometric mean diameter)
          ENDIF
       ENDDO
 
-C     ! two step strat
+C     two-step solver starts
       !tolerence
       rtol=TOL
       atol=1.d-6*TOL
@@ -267,16 +280,6 @@ C     ! two step strat
       tstep=tstep_min ! initial step tstep: dtn
       tschem=ts ! initial timestep
       tfchem=tschem+delta_t! total chemistry step
-
-      ! init SumM
-      if (tag_SumM.eq.1) then ! only if it is in cst list
-         SumM = ZC(iSumM)
-         !print*,'SumM used and estimated in SSH',SumM, DLpress * 7.243D16 / DLtemp
-
-      else
-         !SumM = DLpress * 7.243D16 / DLtemp
-         SumM = 0.d0
-      endif
 
       ! init conc.
       do Jsp=1,NS
@@ -287,84 +290,75 @@ C     ! two step strat
       !premier calcul de l'ordre 1
       do j=1,m
 
-         !computes chpr and chlo which are the vectors with all the terms of production (chpr=P) and losses (chlo=LxC)
+        !computes chpr and chlo which are the vectors with all the terms of production (chpr=P) and losses (chlo=LxC)
 
          ! compute RO2
          RO2=0.d0
-         if (iRO2.ne.0) then
+         if (tag_RO2.ne.0) then
            ! add background if tag = 2,3,4 (from ro2 file)
            if (tag_RO2.ge.2
      &         .and.iRO2_cst.ne.0) then
-            RO2 = RO2 + ZC_old(iRO2_cst)
+             RO2 = RO2 + ZC_cst(iRO2_cst)
            endif
            ! add from primary VOCs (RO2 list) tag = 1,3
            if (tag_RO2 .eq. 1 .or. tag_RO2 .eq. 3 
-     &         .or. tag_RO2 .eq. 5) then
+     &         ) then
              do Jsp =1,nRO2_chem
                RO2=RO2+ZC(RO2index(Jsp))
              enddo
            endif
          endif
 
-          ! kinetic rate
-          ! Compute zenithal angles
-          DLmuzero=ssh_muzero(tschem,Dlon,Dlat)
-          Zangzen=dabs(DACOS(DLmuzero)*180.D0/PI)
-          DLmuzero=ssh_muzero(tfchem,Dlon,Dlat)
-          Zangzenf=dabs(DACOS(DLmuzero)*180.D0/PI)
-          ! aerosol_formation = T
-C     !     CALL SSH_Kinetic(Ns,Nbin_aer,Nr,
-C     !&            IHETER,ICLD,DLRKi,DLtemp,
-C     !&            DLhumid,DLpress,Zangzen,
-C     !&            Zatt,lwca,granulo_aer,
-C     !&            wet_diameter_aer,DSF,
-C     !&            hetero_species_index,Wmol,LWCmin,
-C     !&            option_photolysis,RO2,SumM,tag_SumM)
-
+        ! kinetic rate
+        ! Compute zenithal angles
+        DLmuzero=ssh_muzero(tschem,Dlon,Dlat)
+        Zangzen=dabs(DACOS(DLmuzero)*180.D0/PI)
+        DLmuzero=ssh_muzero(tfchem,Dlon,Dlat)
+        Zangzenf=dabs(DACOS(DLmuzero)*180.D0/PI)
           ! aerosol_formation = F
           CALL SSH_Kinetic(Nr,DLRKi,DLtemp,
      &            DLhumid,DLpress,Zangzen,
      &            Zatt,option_photolysis,
-     &            RO2,SumM,tag_SumM)
+     &            RO2)
 
-          ! keep inorganic constant
-          if (ncst_chem.gt.0) then
-            do i1=1,ncst_chem
-               ZC(cstindex(i1))=ZC_old(i1)
-               ZCtot(cstindex(i1))=ZC_old(i1)
+        ! keep inorganic constant
+        if (ncst_gas.gt.0) then
+            do i1=1,ncst_gas
+               ZC(cst_gas_index(i1))=ZC_cst(i1)
+               ZCtot(cst_gas_index(i1))=ZC_cst(i1)
             enddo
-          endif
+        endif
 
-          !C      !prod(Ns): chpr0
-          ! W(Nr): reaction rates.: DLRkf
-          call ssh_rates(Ns,Nr,DLRKi,ZC,DLRkf)
-          call ssh_fexprod(Nr,Ns,DLRkf,chpr0)
+        !C    !prod(Ns): chpr0
+        ! W(Nr): reaction rates.: DLRkf
+        call ssh_rates(Ns,Nr,DLRKi,ZC,DLRkf)
+            call ssh_fexprod(Nr,Ns,DLRkf,chpr0)
 
-          !C      !loss(Ns): chlo0
-          !dw(Nr,Ns): derivative of reaction rates wrt Y.
-          call ssh_dratedc(Ns,Nr,DLRKi,ZC,dw)
-          call ssh_fexloss(Nr,Ns,dw,chlo0)
+        !C    !loss(Ns): chlo0
+        !dw(Nr,Ns): derivative of reaction rates wrt Y.
+        call ssh_dratedc(Ns,Nr,DLRKi,ZC,dw)
+        call ssh_fexloss(Nr,Ns,dw,chlo0)
 
-          do Jsp=1,NS
-            if (chpr0(Jsp)>dzero.or.chlo0(Jsp)>dzero) then
-                  !init
-                  ratloss=chlo0(Jsp)*ratio_gas(Jsp)
-                  ZCtot(Jsp)=(conci(Jsp)+tstep*chpr0(Jsp))
+        do Jsp=1,NS
+          if (chpr0(Jsp)>dzero.or.chlo0(Jsp)>dzero) then
+            !init
+            ratloss=chlo0(Jsp)*ratio_gas(Jsp)
+            ZCtot(Jsp)=(conci(Jsp)+tstep*chpr0(Jsp))
      &                 /(dun+tstep*ratloss)
-                  ZC(Jsp)=ratio_gas(Jsp)*ZCtot(Jsp)
-                      ! clip
-                  if(ZC(Jsp)<dzero) ZC(Jsp)=dzero
-                  if(ZCtot(Jsp)<dzero) ZCtot(Jsp)=dzero
-              endif
-           enddo
+            ZC(Jsp)=ratio_gas(Jsp)*ZCtot(Jsp)
+              ! clip
+            if(ZC(Jsp)<dzero) ZC(Jsp)=dzero
+            if(ZCtot(Jsp)<dzero) ZCtot(Jsp)=dzero
+          endif
+        enddo
       enddo
 
       ! keep inorganic constant
-      if (ncst_chem.gt.0) then
-         do i1=1,ncst_chem
-            ZC(cstindex(i1))=ZC_old(i1)
-            ZCtot(cstindex(i1))=ZC_old(i1)
-         enddo
+      if (ncst_gas.gt.0) then
+        do i1=1,ncst_gas
+           ZC(cst_gas_index(i1))=ZC_cst(i1)
+            ZCtot(cst_gas_index(i1))=ZC_cst(i1)
+        enddo
       endif
 
       ! calculate error
@@ -387,47 +381,36 @@ C     !&            option_photolysis,RO2,SumM,tag_SumM)
 
       ! pour evider diviser par zero
       if(error_max>dzero) then
-         tstep=max(tstep_min,max(dun/alpha,min(alpha,0.8d0/
-     &            (dsqrt(error_max))))*tstep)
+        tstep=max(tstep_min,max(dun/alpha,min(alpha,0.8d0/
+     &             (error_max**0.5d0)))*tstep)
       else
-         tstep=alpha*tstep
+        tstep=alpha*tstep
       endif
-      tstep=min(tstep,tfchem-tschem) !genoa
 
+      tstep=min(tstep,tfchem-tschem)
       if (tstep.gt.dzero) then
           c=dtnsave/tstep
       else
          c=1
       endif
-
       gam=(c+dun)/(c+2.d0)
 
       !les calculs suivants de l'ordre 2
-      do while (tschem<tfchem)  !-0.001)!!!??
-         do j=1,m
+      do while (tschem<tfchem)
+        do j=1,m
             !computes chpr and chlo which are the vectors with all the terms of production (chpr=P) and losses (chlo=LxC)
-
-            ! init SumM
-            !if (tag_SumM.eq.1) then ! only if it is in cst list
-            !   print*,'SumM in',SumM
-               !tag_SumM = 1
-            !else
-               !SumM = DLpress * 7.243D16 / DLtemp
-               !SumM = 0.d0
-               !tag_SumM = 0
-            !endif
 
             ! compute RO2 used in chem
             RO2=0.d0
-            if (iRO2.ne.0) then
+            if (tag_RO2.ne.0) then
                 ! add background tag = 2,3,4 (from ro2 file)
                 if (tag_RO2.ge.2 
      &              .and.iRO2_cst.ne.0) then
-                   RO2 = RO2 + ZC_old(iRO2_cst)
+                   RO2 = RO2 + ZC_cst(iRO2_cst)
                 endif
                 ! add from primary VOCs (RO2 list) tag = 1,3
                 if (tag_RO2 .eq. 1 .or. tag_RO2 .eq. 3 
-     &              .or. tag_RO2 .eq. 5) then
+     &              ) then
                    do Jsp =1,nRO2_chem
                      RO2=RO2+ZC(RO2index(Jsp))
                    enddo
@@ -440,36 +423,26 @@ C     !&            option_photolysis,RO2,SumM,tag_SumM)
             Zangzen=dabs(DACOS(DLmuzero)*180.D0/PI)
             DLmuzero=ssh_muzero(tschem+tstep,Dlon,Dlat)
             Zangzenf=dabs(DACOS(DLmuzero)*180.D0/PI)
-
-          ! aerosol_formation = T
-C     !     CALL SSH_Kinetic(Ns,Nbin_aer,Nr,
-C     !&            IHETER,ICLD,DLRKi,DLtemp,
-C     !&            DLhumid,DLpress,Zangzen,
-C     !&            Zatt,lwca,granulo_aer,
-C     !&            wet_diameter_aer,DSF,
-C     !&            hetero_species_index,Wmol,LWCmin,
-C     !&            option_photolysis,RO2,SumM,tag_SumM)
-
           ! aerosol_formation = F
           CALL SSH_Kinetic(Nr,DLRKi,DLtemp,
      &            DLhumid,DLpress,Zangzen,
      &            Zatt,option_photolysis,
-     &            RO2,SumM,tag_SumM)
+     &            RO2)
 
             ! keep inorganic constant
-            if (ncst_chem.gt.0) then
-               do i1=1,ncst_chem
-                  ZC(cstindex(i1))=ZC_old(i1)
-                  ZCtot(cstindex(i1))=ZC_old(i1)
+            if (ncst_gas.gt.0) then
+               do i1=1,ncst_gas
+                  ZC(cst_gas_index(i1))=ZC_cst(i1)
+                  ZCtot(cst_gas_index(i1))=ZC_cst(i1)
                enddo
             endif
 
-            !C      !prod(Ns): chpr0
+            !C    !prod(Ns): chpr0
             ! W(Nr): reaction rates.: DLRkf
             call ssh_rates(Ns,Nr,DLRKi,ZC,DLRkf)
             call ssh_fexprod(Nr,Ns,DLRkf,chpr0)
 
-            !C      !loss(Ns): chlo0
+            !C    !loss(Ns): chlo0
             !dw(Nr,Ns): derivative of reaction rates wrt Y.
             call ssh_dratedc(Ns,Nr,DLRKi,ZC,dw)
             call ssh_fexloss(Nr,Ns,dw,chlo0)
@@ -488,15 +461,15 @@ C     !&            option_photolysis,RO2,SumM,tag_SumM)
                   if(ZCtot(Jsp)<dzero) ZCtot(Jsp)=dzero
                endif
             enddo
-         enddo
+        enddo
 
-         ! keep inorganic constant
-         if (ncst_chem.gt.0) then
-            do i1=1,ncst_chem
-               ZC(cstindex(i1))=ZC_old(i1)
-               ZCtot(cstindex(i1))=ZC_old(i1)
+        ! keep inorganic constant
+        if (ncst_gas.gt.0) then
+            do i1=1,ncst_gas
+               ZC(cst_gas_index(i1))=ZC_cst(i1)
+               ZCtot(cst_gas_index(i1))=ZC_cst(i1)
             enddo
-         endif
+        endif
 
          error_max=0.d0
          do Jsp=1,NS
@@ -508,91 +481,70 @@ C     !&            option_photolysis,RO2,SumM,tag_SumM)
      &           (c*(c+dun)*wk)))
          enddo
 
-         do while (error_max>10.0d0 .and. tstep>tstep_min)
+        do while (error_max>10.0d0 .and. tstep>tstep_min)
             tstep=max(tstep_min,max(dun/alpha,min(alpha,
-     &           0.8d0/(dsqrt(error_max))))*tstep)
-            tstep=min(tstep,tfchem-tschem) !genoa
-            !c=dtnsave/tstep
+     &                0.8d0/(error_max**0.5d0)))*tstep)
+            tstep=min(tstep,tfchem-tschem)
             if (tstep.gt.dzero) then
-               c=dtnsave/tstep
+                c=dtnsave/tstep
             else
-              c=1
+                c=1
             endif
-
             gam=(c+1)/(c+2.d0)
             do Jsp=1,NS
                ZCtot(Jsp)=conci(Jsp) !FCo
                ZC(Jsp)=ratio_gas(Jsp)*ZCtot(Jsp)
             enddo
 
-            do j=1,m
-               !computes chpr and chlo which are the vectors with all the terms of production (chpr=P) and losses (chlo=LxC)
-
-               ! init SumM
-               !if (iSumM_cst .gt. 0) then ! only if it is in cst list
-                  
-                  !tag_SumM = 1
-               !else
-                  !SumM = DLpress * 7.243D16 / DLtemp
-                  !SumM = 0.d0
-                  !tag_SumM = 0
-               !endif
+          do j=1,m
+            !computes chpr and chlo which are the vectors with all the terms of production (chpr=P) and losses (chlo=LxC)
 
                ! compute RO2 used in chem
                RO2=0.d0
-               if (iRO2.ne.0) then
+               if (tag_RO2.ne.0) then
                    ! add background tag = 2,3,4 (from ro2 file)
                    if (tag_RO2.ge.2.
      &                 and.iRO2_cst.ne.0) then
-                      RO2 = RO2 + ZC_old(iRO2_cst)
+                      RO2 = RO2 + ZC_cst(iRO2_cst)
                    endif
                    ! add from primary VOCs (RO2 list) tag = 1,3
                    if (tag_RO2 .eq. 1 .or. tag_RO2 .eq. 3 
-     &             .or. tag_RO2 .eq. 5) then
+     &                ) then
                       do Jsp =1,nRO2_chem
                         RO2=RO2+ZC(RO2index(Jsp))
                       enddo
                    endif
                endif
-               ! kinetic rate
-               ! Compute zenithal angles
-               DLmuzero=ssh_muzero(tschem,Dlon,Dlat)
-               Zangzen=dabs(DACOS(DLmuzero)*180.D0/PI)
-               DLmuzero=ssh_muzero(tschem+tstep,Dlon,Dlat)
-               Zangzenf=dabs(DACOS(DLmuzero)*180.D0/PI)
 
-               ! aerosol_formation = T
-C     !         CALL SSH_Kinetic(Ns,Nbin_aer,Nr,
-C     !&            IHETER,ICLD,DLRKi,DLtemp,
-C     !&            DLhumid,DLpress,Zangzen,
-C     !&            Zatt,lwca,granulo_aer,
-C     !&            wet_diameter_aer,DSF,
-C     !&            hetero_species_index,Wmol,LWCmin,
-C     !&            option_photolysis,RO2,SumM,tag_SumM)
-
-              ! aerosol_formation = F
-              CALL SSH_Kinetic(Nr,DLRKi,DLtemp,
+            ! kinetic rate
+            ! Compute zenithal angles
+            DLmuzero=ssh_muzero(tschem,Dlon,Dlat)
+            Zangzen=dabs(DACOS(DLmuzero)*180.D0/PI)
+            DLmuzero=ssh_muzero(tschem+tstep,Dlon,Dlat)
+            Zangzenf=dabs(DACOS(DLmuzero)*180.D0/PI)
+          ! aerosol_formation = F
+          CALL SSH_Kinetic(Nr,DLRKi,DLtemp,
      &            DLhumid,DLpress,Zangzen,
      &            Zatt,option_photolysis,
-     &            RO2,SumM,tag_SumM)
+     &            RO2)
 
-               ! keep inorganic constant
-               if (ncst_chem.gt.0) then
-                  do i1=1,ncst_chem
-                     ZC(cstindex(i1))=ZC_old(i1)
-                     ZCtot(cstindex(i1))=ZC_old(i1)
-                  enddo
-               endif
+            ! keep inorganic constant
+            if (ncst_gas.gt.0) then
+                do i1=1,ncst_gas
+                   ZC(cst_gas_index(i1))=ZC_cst(i1)
+                     ZCtot(cst_gas_index(i1))=ZC_cst(i1)
+                enddo
+            endif
 
-               !C      !prod(Ns): chpr0
-               ! W(Nr): reaction rates.: DLRkf
-               call ssh_rates(Ns,Nr,DLRKi,ZC,DLRkf)
-               call ssh_fexprod(Nr,Ns,DLRkf,chpr0)
+            !C    !prod(Ns): chpr0
+            ! W(Nr): reaction rates.: DLRkf
+            call ssh_rates(Ns,Nr,DLRKi,ZC,DLRkf)
+            call ssh_fexprod(Nr,Ns,DLRkf,chpr0)
 
-               !C      !loss(Ns): chlo0
-               !dw(Nr,Ns): derivative of reaction rates wrt Y.
-               call ssh_dratedc(Ns,Nr,DLRKi,ZC,dw)
-               call ssh_fexloss(Nr,Ns,dw,chlo0)
+            !C    !loss(Ns): chlo0
+            !dw(Nr,Ns): derivative of reaction rates wrt Y.
+            call ssh_dratedc(Ns,Nr,DLRKi,ZC,dw)
+            call ssh_fexloss(Nr,Ns,dw,chlo0)
 
                do Jsp=1,NS
                   if (chpr0(Jsp)>dzero.or.chlo0(Jsp)>dzero) then
@@ -608,85 +560,78 @@ C     !&            option_photolysis,RO2,SumM,tag_SumM)
                      if(ZC(Jsp)<dzero) ZC(Jsp)=dzero
                   endif
                enddo
+          enddo
+
+          ! keep inorganic constant
+          if (ncst_gas.gt.0) then
+            do i1=1,ncst_gas
+               ZC(cst_gas_index(i1))=ZC_cst(i1)
+               ZCtot(cst_gas_index(i1))=ZC_cst(i1)
             enddo
+          endif
 
-
-            ! keep inorganic constant
-            if (ncst_chem.gt.0) then
-              do i1=1,ncst_chem
-                 ZC(cstindex(i1))=ZC_old(i1)
-                 ZCtot(cstindex(i1))=ZC_old(i1)
-              enddo
-            endif
-
-
-            error_max=0.d0
-            do Jsp=1,NS
+          error_max=0.d0
+          do Jsp=1,NS
                wk=atol+rtol*abs(ZCtot(Jsp))*ratio_gas(Jsp)
                error_max=max(error_max,
      &              abs(2.0d0*(c*ZCtot(Jsp)*ratio_gas(Jsp)-
      &              (dun+c)*ratio_gas(Jsp)*conci(Jsp)
      &              +ratio_gas(Jsp)*concii(Jsp))/
      &              (c*(c+dun)*wk)))
-            enddo
-         enddo
-         !save timestep
-         dtnsave=tstep
-         ! update current time
-         tschem=tschem+tstep
-         ! update timestep
-         if(error_max>dzero) then
+          enddo
+        enddo
+        !save timestep
+        dtnsave=tstep
+        ! update current time
+        tschem=tschem+tstep
+        ! update timestep
+        if(error_max>dzero) then
             tstep=max(tstep_min,max(dun/alpha,min(alpha,
-     &            0.8d0/(dsqrt(error_max))))*tstep)
-         else
+     &                0.8d0/(error_max**0.5d0)))*tstep)
+        else
             tstep=alpha*tstep
-         endif
+        endif
 
-         tstep=min(tstep,tfchem-tschem) !genoa
+        tstep=min(tstep,tfchem-tschem)
 
-         if (tstep.gt.dzero) then
-             c=dtnsave/tstep
-         else
-            c=1
-         endif
+        if (tstep.gt.dzero) then
+            c=dtnsave/tstep
+        else
+           c=1
+        endif
+        gam=(c+dun)/(c+2.d0)
 
-         gam=(c+dun)/(c+2.d0)
-
-         !tstep=min(tstep,tfchem-tschem) !genoa
-
-         do Jsp=1,NS
+        do Jsp=1,NS
             concii(Jsp)=conci(Jsp)
             conci(Jsp)=ZCtot(Jsp)
-              ! keep inorganic constant
-              if (ncst_chem.gt.0) then
-               do i1=1,ncst_chem
-                  concii(cstindex(i1))=ZC_old(i1)
-                  conci(cstindex(i1))=ZC_old(i1)
-                  ZC(cstindex(i1))=ZC_old(i1)
-                  ZCtot(cstindex(i1))=ZC_old(i1)
+            ! keep inorganic constant
+            if (ncst_gas.gt.0) then
+               do i1=1,ncst_gas
+                  concii(cst_gas_index(i1))=ZC_cst(i1)
+                  conci(cst_gas_index(i1))=ZC_cst(i1)
+                  ZC(cst_gas_index(i1))=ZC_cst(i1)
+                  ZCtot(cst_gas_index(i1))=ZC_cst(i1)
                enddo
-              endif
-         enddo
-         !print*,'      timestep',tstep,ZC(4)/convers_factor(4)
+            endif
+        enddo
+        !print*,'      timestep',tstep,tschem
       enddo
 
-!!!!!! two step end
+C     two-step solver end
 
 C     Storage in the array of chemical concentrations.
 
-      DO Jsp=1,NS
-!print*,Jsp,DLconc(Jsp),ZC(Jsp)/
-!     &                        convers_factor(Jsp)
-! NAN detection algorithm used
-         if (ZC(Jsp).ne.ZC(Jsp)) then
-            write(*,*) "From chem 0D function:"
-            write(*,*) Jsp, dlconc(Jsp),convers_factor(Jsp),
-     &           ZC(Jsp)/convers_factor(Jsp)
-            stop
-         endif
-!     Conversion molecules/cm3 to mug/m3.
-         DLconc(Jsp) = ZC(Jsp)/convers_factor(Jsp)
-      ENDDO
+               DO Jsp=1,NS
+                  ! NAN detection algorithm used
+                  if (ZC(Jsp).ne.ZC(Jsp)) then
+                     write(*,*) "From chem 0D function:"
+                     write(*,*) Jsp, dlconc(Jsp),convers_factor(Jsp),
+     &                          ZC(Jsp)/convers_factor(Jsp)
+                     stop
+                  endif
+          ! Conversion molecules/cm3 to mug/m3.
+          DLconc(Jsp) = ZC(Jsp)/convers_factor(Jsp)
+               ENDDO
 
       if (keep_gp==1) then
          do s = 1, Ns_aer
@@ -723,8 +668,16 @@ C     Storage in the array of chemical concentrations.
          ENDDO
       endif
 
+      ! keep inorganic constant
+      if (ncst_gas.gt.0) then
+         do i1=1,ncst_gas
+            DLconc(cst_gas_index(i1))=ZC(cst_gas_index(i1))/
+     &                  convers_factor(cst_gas_index(i1))
+         enddo
+      endif
+
       ! output RO2
-      if (iRO2.gt.0) then
+      if (iRO2.ne.0.and.tag_RO2.ne.0) then
             ! output only ro2 from list
             DLconc(iRO2)=0.d0
             do Jsp =1,nRO2_chem
@@ -733,9 +686,6 @@ C     Storage in the array of chemical concentrations.
      &                  convers_factor(RO2index(Jsp))
             enddo
       endif
-
-      ! output airm
-      if (iSumM .gt. 0) DLconc(iSumM) = SumM
 
       DO Jb=1,Nbin_aer
          DO Jsp=1,Ns_aer

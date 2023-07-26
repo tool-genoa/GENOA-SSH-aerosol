@@ -122,8 +122,8 @@ c
          endif
       enddo
 !      if (indic.eq.0) then
-!genoa        write(6,*)'WARNING: product unknown or reaction without product'
-!genoa     &        ,nam(1)(1:imot(icurseur))!genoa
+!zhizhao        write(6,*)'WARNING: product unknown or reaction without product'
+!zhizhao     &        ,nam(1)(1:imot(icurseur))!zhizhao
 !      endif
 c
       icurseur = icurseur+1
@@ -195,8 +195,6 @@ c
       dimension imot(nbmot)
       dimension b(ntabphotmax)
 
-      double precision ratio !genoa
-      integer e
 c
 c     Arrhenius' law
 c     Gas-phase only
@@ -330,7 +328,7 @@ c     RCFE: Reactions Calculated From Equilibria.
          call ssh_WRCFE90 (nr,bp(1,nr),bp(2,nr),bp(3,nr),bp(4,nr),
      &        bp(5,nr),bp(6,nr))
 
-C     genoa add for Complex rate coefficients in MCM v3.3.1
+C     MCM add for Complex rate coefficients in MCM v3.3.1
       elseif (mot(i)(1:4).eq.'MCM1') then
          nb(nr)=4
          call ssh_reel(bp(1,nr),mot(i+1),imot(i+1))
@@ -341,7 +339,7 @@ C     genoa add for Complex rate coefficients in MCM v3.3.1
          call ssh_reel(bp(6,nr),mot(i+6),imot(i+6))
          call ssh_reel(bp(7,nr),mot(i+7),imot(i+7))
          call ssh_reel(bp(8,nr),mot(i+8),imot(i+8))
-         call ssh_MCM1 (nr,bp(1,nr),bp(2,nr),bp(3,nr),bp(4,nr),
+         call ssh_WKMCM1 (nr,bp(1,nr),bp(2,nr),bp(3,nr),bp(4,nr),
      &        bp(5,nr),bp(6,nr),bp(7,nr),bp(8,nr))
 
       elseif (mot(i)(1:4).eq.'MCM2') then
@@ -354,7 +352,7 @@ C     genoa add for Complex rate coefficients in MCM v3.3.1
          call ssh_reel(bp(6,nr),mot(i+6),imot(i+6))
          call ssh_reel(bp(7,nr),mot(i+7),imot(i+7))
          call ssh_reel(bp(8,nr),mot(i+8),imot(i+8))
-         call ssh_MCM2 (nr,bp(1,nr),bp(2,nr),bp(3,nr),bp(4,nr),
+         call ssh_WKMCM2 (nr,bp(1,nr),bp(2,nr),bp(3,nr),bp(4,nr),
      &        bp(5,nr),bp(6,nr),bp(7,nr),bp(8,nr))
 
 c     GENERAL: IUPAC from MCM photolysis genoa
@@ -364,16 +362,7 @@ c     GENERAL: IUPAC from MCM photolysis genoa
          call ssh_reel(bp(1,nr),mot(i+1),imot(i+1))
          call ssh_reel(bp(2,nr),mot(i+2),imot(i+2))
          call ssh_reel(bp(3,nr),mot(i+3),imot(i+3))
-         call ssh_MCM3 (nr,bp(1,nr),bp(2,nr),bp(3,nr))
-
-c     GENERAL: IUPAC from MCM. genoa
-      elseif (mot(i)(1:3).eq.'GEN') then
-         nb(nr)=2
-         call ssh_reel(bp(1,nr),mot(i+1),imot(i+1))
-         call ssh_reel(bp(2,nr),mot(i+2),imot(i+2))
-         call ssh_reel(bp(3,nr),mot(i+3),imot(i+3))
-         call ssh_reel(bp(4,nr),mot(i+4),imot(i+4))
-         call ssh_MCM4 (nr,bp(1,nr),bp(2,nr),bp(3,nr),bp(4,nr))
+         call ssh_WKMCM3 (nr,bp(1,nr),bp(2,nr),bp(3,nr))
 
 c     SPEC: specific reactions.
       elseif (mot(i)(1:4).eq.'SPEC') then
@@ -381,27 +370,45 @@ c     SPEC: specific reactions.
          call ssh_entier(ispebp(nr),mot(i+1),imot(i+1))
 
 c modif: YK(2010/02/15)
-C!genoa         write(*,*) 'For some specific reactionconstants',mechanism_name !genoa comment write(*,*)
+c!zhizhao         write(*,*) 'For some specific reactionconstants',mechanism_name
+c         write(*,*) mechanism_name
 c         if (chem_mechanism.eq.1) then
          if (mechanism_name .eq. "racm  ") then
             call ssh_WSPEC_RACM90 (nr,ispebp(nr))
-C!genoa            write(*,*) '   expressions in RACM mechanism are used'
+C!zhizhao            write(*,*) '   expressions in RACM mechanism are used'
 c         elseif (chem_mechanism.eq.2) then
          elseif (mechanism_name .eq. "cb05  " .or.
      &           mechanism_name .eq. "cb05en" .or.
      &           mechanism_name .eq. "cb05v0") then
             call ssh_WSPEC_CB0590 (nr,ispebp(nr))
-C!genoa            write(*,*) '   expressions in CB05 mechanism are used'
+C!zhizhao            write(*,*) '   expressions in CB05 mechanism are used'
 c         elseif (chem_mechanism.eq.3) then
-         elseif (mechanism_name .eq. "racm2 ") then
+         elseif (mechanism_name .eq. "racm2 " .or.
+     &           mechanism_name .eq. "racm2-2020" .or.
+     &           mechanism_name .eq. "racm2-2020rad") then
             call ssh_WSPEC_RACM290 (nr,ispebp(nr))
-C!genoa            write(*,*) '   expressions in RACM2 mechanism are used'
-         else
-C!genoa            write(*,*) 'Warning: specific reaction expression
-C!genoa     &   is not given for ', mechanism_name
+C!zhizhao            write(*,*) '   expressions in RACM2 mechanism are used'
+	 elseif (mechanism_name .eq. "MELCHIOR2") then
+C!zhizhao            write(*,*) nr, ispebp(nr)
+	    call ssh_WSPEC_MELCHIOR2 (nr, ispebp(nr))
+C!zhizhao	    write(*,*) '   expressions in MELCHIOR2 mechanism are used'
+         elseif (mechanism_name .eq. "MCM") then
+            call ssh_WSPEC_MCM (nr,ispebp(nr))
+C!zhizhao         else
+C!zhizhao            write(*,*) nr, ispebp(nr)
+C!zhizhao            write(*,*) 'Warning: specific reaction expression
+C!zhizhao     &   is not given for ', mechanism_name
          endif
 
 c end of modif
+
+!!!!!!!!!! ADDED BY VICTOR2020 :
+c     HETERO: heterogeneous reactions.
+      elseif (mot(i)(1:6).eq.'HETERO') then
+         nb(nr)=5
+         call ssh_entier(ihetero(nr),mot(i+1),imot(i+1))
+         call ssh_WHETERO90 (nr,ihetero(nr))
+!!!!!!!!!! 
 
 c     EXTRA: specific reaction with corrected factors
 C     O3 -> 2. OH with corrected photolysis
@@ -439,15 +446,15 @@ c     Third body.
             ittb(nr)=4
          elseif ((mot(i+1)(1:2).eq.'H2').and.(imot(i+1).eq.2)) then
             ittb(nr)=5
-         elseif (mot(i+1)(1:3).eq.'RO2') then !genoa add RO2 in TB
+         elseif (mot(i+1)(1:3).eq.'RO2') then !zhizhao add RO2 in TB
             ittb(nr)=6
-         ! genoa add the possibility to add branch ratio (6 digits)
+         ! zhizhao add the possibility to add branch ratio (6 digits)
          else
             call ssh_reel(ratio,mot(i+1),imot(i+1))
             !read(mot(i+1)(1:6),*,IOSTAT=e) ratio
             !if (e.ne.0) print*,'can not read TB ratio',nr
             ittb(nr)=7
-         !genoa
+         !zhizhao
          !else
          !   write(*,*)'ERROR: syntax for Third Body'
          !   write(*,*)'M, O2, N2, H20 or H2 expected.'
@@ -464,7 +471,7 @@ c     Modification BS/KS 21/05/2002
 c     Case of a third body reaction: need for kinetics.
 
       if ((ittb(nr).ne.0).and.(nb(nr).eq.0)) goto 100
-      if (ittb(nr).ne.0) call ssh_WTB90(nr,ittb(nr),ratio)!genoa
+      if (ittb(nr).ne.0) call ssh_WTB90(nr,ittb(nr),ratio)!zhizhao
 
 c     Update the chemical production term and the Jacobian matrix.
       call ssh_WFJ90(s,nr,jer)
@@ -1053,11 +1060,12 @@ c
       enddo
 c
 c     write(*,*)' Total number of reactions         =',nrp(1)
-C!genoa      write(*,*)' Number of gas-phase reactions     =',nrp(2)
-C!genoa      write(*,*)' Number of aqueous-phase reactions =',nrp(3)
-C!genoa      write(*,*)
-C!genoa     &     ' Nbr of Henry reversible reactions =',nrp(1)-nrp(2)-nrp(3)
-C!genoa      write(*,*)' Third body reactions              =',nthird(1)
-C!genoa      write(*,*)'#############################################'
+C!zhizhao      write(*,*)' Number of gas-phase reactions     =',nrp(2)
+C!zhizhao      write(*,*)' Number of aqueous-phase reactions =',nrp(3)
+C!zhizhao      write(*,*)
+C!zhizhao     &     ' Nbr of Henry reversible reactions =',nrp(1)-nrp(2)-nrp(3)
+C!zhizhao      write(*,*)' Third body reactions              =',nthird(1)
+C!zhizhao      write(*,*)'#############################################'
       return
       end
+
